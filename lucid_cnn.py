@@ -225,6 +225,7 @@ def main(argv):
             if filename_prefix in filename:
                 X, Y = load_dataset(warm_up_file)
                 Y_pred = np.squeeze(model.predict(X, batch_size=2048) > 0.5)
+                print("Y_pred: {}".format(Y_pred.shape))
 
             for dataset_file in dataset_filelist:
                 filename = dataset_file.split('/')[-1].strip()
