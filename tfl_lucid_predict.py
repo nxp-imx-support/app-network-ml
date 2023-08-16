@@ -130,17 +130,18 @@ def predict(args):
         filename = warm_up_file.split('/')[-1].strip()
         if filename_prefix in filename:
             X, Y = load_dataset(warm_up_file)
-            # print("X shape: {}".format(X.shape))
-            # print("Y shape: {}".format(Y.shape))
-            # Y_pred = np.squeeze(model.predict(X, batch_size=2048) > 0.5)
             Y_pred = list()
+            cnt = 0
             for vec in X:
                 input_data = vec / input_scale + input_zero_point
                 input_data = np.expand_dims(input_data, axis=0).astype(input_desc["dtype"])
                 model.set_tensor(input_desc['index'], input_data)
                 model.invoke()
                 tmp = np.squeeze(model.get_tensor(output_desc['index']))
+                tmp = input_scale * (tmp - input_zero_point)
                 Y_pred.append(tmp > 0.5)
+                if cnt > 10:
+                    break
 
         # 正式预测
         for dataset_file in dataset_filelist:
@@ -149,10 +150,9 @@ def predict(args):
                 X, Y = load_dataset(dataset_file)
                 [packets] = count_packets_in_dataset([X])
 
-                Y_pred = None
+                Y_pred = list()
                 Y_true = Y
                 avg_time = 0
-                Y_pred = list()
                 pt0 = time.time()
                 for vec in X:
                     input_data = vec / input_scale + input_zero_point
@@ -160,6 +160,7 @@ def predict(args):
                     model.set_tensor(input_desc['index'], input_data)
                     model.invoke()
                     tmp = np.squeeze(model.get_tensor(output_desc['index']))
+                    tmp = input_scale * (tmp - input_zero_point)
                     Y_pred.append(tmp > 0.5)
                 Y_pred = np.array(Y_pred)
                 avg_time = time.time() - pt0
