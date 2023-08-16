@@ -19,7 +19,7 @@ import h5py
 
 
 keras_model = "output/10t-10n-DOS2019-LUCID.h5"
-out_tflite = 'output/10t-10n-DOS2019-LUCID-quant-int8.tflite'
+out_tflite = 'output/10t-10n-DOS2019-LUCID-quant-uint8.tflite'
 
 dataset_folder = "sample-dataset"
 
