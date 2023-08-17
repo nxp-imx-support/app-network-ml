@@ -133,6 +133,8 @@ def predict(args):
             Y_pred = list()
             cnt = 0
             for vec in X:
+                if cnt > 10:
+                    break
                 input_data = vec / input_scale + input_zero_point
                 input_data = np.expand_dims(input_data, axis=0).astype(input_desc["dtype"])
                 model.set_tensor(input_desc['index'], input_data)
@@ -140,8 +142,7 @@ def predict(args):
                 tmp = np.squeeze(model.get_tensor(output_desc['index']))
                 tmp = input_scale * (tmp - input_zero_point)
                 Y_pred.append(tmp > 0.5)
-                if cnt > 10:
-                    break
+                cnt += 1
 
         # 正式预测
         for dataset_file in dataset_filelist:
