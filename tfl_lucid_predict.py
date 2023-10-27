@@ -154,17 +154,20 @@ def predict(args):
                 Y_pred = list()
                 Y_true = Y
                 avg_time = 0
-                pt0 = time.time()
+                delta = 0
+                
                 for vec in X:
                     input_data = vec / input_scale + input_zero_point
                     input_data = np.expand_dims(input_data, axis=0).astype(input_desc["dtype"])
                     model.set_tensor(input_desc['index'], input_data)
+                    pt0 = time.time()
                     model.invoke()
+                    delta = time.time() - pt0
                     tmp = np.squeeze(model.get_tensor(output_desc['index']))
                     tmp = input_scale * (tmp - input_zero_point)
                     Y_pred.append(tmp > 0.5)
+                    avg_time += delta
                 Y_pred = np.array(Y_pred)
-                avg_time = time.time() - pt0
 
                 report_results(np.squeeze(Y_true), Y_pred, packets, model_name_string, filename, avg_time,predict_writer)
                 predict_file.flush()
