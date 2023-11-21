@@ -1,2 +1,4 @@
 output/predictions-*
-
+output/*
+__pycache__/*
+*.pyc

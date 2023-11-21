@@ -33,7 +33,7 @@ config = tf.compat.v1.ConfigProto(inter_op_parallelism_threads=1)
 
 from tensorflow.keras.optimizers import Adam,SGD
 from tensorflow.keras.layers import Input, Dense, Activation, Flatten, Conv2D
-from tensorflow.keras.layers import Dropout, GlobalMaxPooling2D
+from tensorflow.keras.layers import Dropout, GlobalMaxPooling2D, MaxPooling2D
 from tensorflow.keras.models import Model, Sequential, load_model, save_model
 from sklearn.metrics import f1_score, accuracy_score, confusion_matrix
 from sklearn.utils import shuffle
@@ -56,7 +56,7 @@ PREDICT_HEADER = ['Model', 'Time', 'Packets', 'Samples', 'DDOS%', 'Accuracy', 'F
 
 # hyperparameters
 PATIENCE = 10
-DEFAULT_EPOCHS = 1000
+DEFAULT_EPOCHS = 100
 hyperparamters = {
     "learning_rate": [0.1,0.01],
     "batch_size": [1024,2048],
@@ -66,19 +66,14 @@ hyperparamters = {
 }
 
 def Conv2DModel(model_name,input_shape,kernel_col, kernels=64,kernel_rows=3,learning_rate=0.01,regularization=None,dropout=None):
-    K.clear_session()
-
     model = Sequential(name=model_name)
     regularizer = regularization
 
-    model.add(Conv2D(kernels, (kernel_rows,kernel_col), strides=(1, 1), input_shape=input_shape, kernel_regularizer=regularizer, name='conv0'))
-    if dropout != None and type(dropout) == float:
-        model.add(Dropout(dropout))
-    model.add(Activation('relu'))
+    model.add(Conv2D(kernels, (kernel_rows,kernel_col), strides=(1, 1), input_shape=input_shape, kernel_regularizer=regularizer, activation="relu", name='conv0'))
 
     model.add(GlobalMaxPooling2D())
     model.add(Flatten())
-    model.add(Dense(1, activation='sigmoid', name='fc1'))
+    model.add(Dense(1, activation=tf.keras.activations.sigmoid, name='fc1'))
 
     print(model.summary())
     compileModel(model, learning_rate)
@@ -96,7 +91,7 @@ def main(argv):
         description='DDoS attacks detection with convolutional neural networks',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument('-t', '--train', nargs='+', type=str,
+    parser.add_argument('-t', '--train', type=str,
                         help='Start the training process')
 
     parser.add_argument('-e', '--epochs', default=DEFAULT_EPOCHS, type=int,
@@ -132,70 +127,67 @@ def main(argv):
         os.mkdir(OUTPUT_FOLDER)
 
     if args.train is not None:
-        subfolders = glob.glob(args.train[0] +"/*/")
-        if len(subfolders) == 0: # for the case in which the is only one folder, and this folder is args.dataset_folder[0]
-            subfolders = [args.train[0] + "/"]
-        else:
-            subfolders = sorted(subfolders)
-        for full_path in subfolders:
-            full_path = full_path.replace("//", "/")  # remove double slashes when needed
-            folder = full_path.split("/")[-2]
-            dataset_folder = full_path
-            X_train, Y_train = load_dataset(dataset_folder + "/*" + '-train.hdf5')
-            X_val, Y_val = load_dataset(dataset_folder + "/*" + '-val.hdf5')
+        dataset_folder = args.train
+        X_train, Y_train = load_dataset(dataset_folder + "/*" + '-train.hdf5')
+        X_val, Y_val = load_dataset(dataset_folder + "/*" + '-val.hdf5')
 
-            X_train, Y_train = shuffle(X_train, Y_train, random_state=SEED)
-            X_val, Y_val = shuffle(X_val, Y_val, random_state=SEED)
+        X_train, Y_train = shuffle(X_train, Y_train, random_state=SEED)
+        X_val, Y_val = shuffle(X_val, Y_val, random_state=SEED)
 
-            # get the time_window and the flow_len from the filename
-            train_file = glob.glob(dataset_folder + "/*" + '-train.hdf5')[0]
-            filename = train_file.split('/')[-1].strip()
-            time_window = int(filename.split('-')[0].strip().replace('t', ''))
-            max_flow_len = int(filename.split('-')[1].strip().replace('n', ''))
-            dataset_name = filename.split('-')[2].strip()
+        # get the time_window and the flow_len from the filename
+        train_file = glob.glob(dataset_folder + "/*" + '-train.hdf5')[0]
+        filename = train_file.split('/')[-1].strip()
+        time_window = int(filename.split('-')[0].strip().replace('t', ''))
+        max_flow_len = int(filename.split('-')[1].strip().replace('n', ''))
+        dataset_name = filename.split('-')[2].strip()
 
-            print ("\nCurrent dataset folder: ", dataset_folder)
+        print ("\nCurrent dataset folder: ", dataset_folder)
+        print("X_train shape: {}, Y_train shape: {}".format(X_train.shape, Y_train.shape))
 
-            model_name = dataset_name + "-LUCID"
-            keras_classifier = KerasClassifier(build_fn=Conv2DModel,model_name=model_name, input_shape=X_train.shape[1:],kernel_col=X_train.shape[2])
-            rnd_search_cv = GridSearchCV(keras_classifier, hyperparamters, cv=args.cross_validation if args.cross_validation > 1 else [(slice(None), slice(None))], refit=True, return_train_score=True)
+        model_name = dataset_name + "-LUCID"
+        model = Conv2DModel(model_name=model_name, input_shape=X_train.shape[1:], kernel_col=X_train.shape[2])
+        model.fit(X_train, Y_train, epochs=args.epochs, validation_data=(X_val, Y_val))
 
-            es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=PATIENCE)
-            best_model_filename = OUTPUT_FOLDER + str(time_window) + 't-' + str(max_flow_len) + 'n-' + model_name
-            mc = ModelCheckpoint(best_model_filename + '.h5', monitor='val_accuracy', mode='max', verbose=1, save_best_only=True)
-            # With K-Fold cross-validation, the validation set is only used for early stopping
-            rnd_search_cv.fit(X_train, Y_train, epochs=args.epochs, validation_data=(X_val, Y_val), callbacks=[es, mc])
+        # keras_classifier = KerasClassifier(build_fn=Conv2DModel,model_name=model_name, input_shape=X_train.shape[1:],kernel_col=X_train.shape[2])
+        # rnd_search_cv = GridSearchCV(keras_classifier, hyperparamters, cv=args.cross_validation if args.cross_validation > 1 else [(slice(None), slice(None))], refit=True, return_train_score=True)
 
-            # With refit=True (default) GridSearchCV refits the model on the whole training set (no folds) with the best
-            # hyper-parameters and makes the resulting model available as rnd_search_cv.best_estimator_.model
-            best_model = rnd_search_cv.best_estimator_.model
+        # es = EarlyStopping(monitor='val_loss', mode='min', verbose=1, patience=PATIENCE)
+        # best_model_filename = OUTPUT_FOLDER + str(time_window) + 't-' + str(max_flow_len) + 'n-' + model_name
+        # mc = ModelCheckpoint(best_model_filename + '.h5', monitor='val_accuracy', mode='max', verbose=1, save_best_only=True)
+        # With K-Fold cross-validation, the validation set is only used for early stopping
+        # rnd_search_cv.fit(X_train, Y_train, epochs=args.epochs, validation_data=(X_val, Y_val), callbacks=[es, mc])
 
-            # We overwrite the checkpoint models with the one trained on the whole training set (not only k-1 folds)
-            best_model.save(best_model_filename + '.h5')
+        # With refit=True (default) GridSearchCV refits the model on the whole training set (no folds) with the best
+        # hyper-parameters and makes the resulting model available as rnd_search_cv.best_estimator_.model
+        # best_model = rnd_search_cv.best_estimator_.model
 
-            # Alternatively, to save time, one could set refit=False and load the best model from the filesystem to test its performance
-            #best_model = load_model(best_model_filename + '.h5')
+        # We overwrite the checkpoint models with the one trained on the whole training set (not only k-1 folds)
+        model_filename = os.path.join(OUTPUT_FOLDER, model_name)
+        model.save(model_filename, save_format="tf")
 
-            Y_pred_val = (best_model.predict(X_val) > 0.5)
-            Y_true_val = Y_val.reshape((Y_val.shape[0], 1))
-            f1_score_val = f1_score(Y_true_val, Y_pred_val)
-            accuracy = accuracy_score(Y_true_val, Y_pred_val)
+        # Alternatively, to save time, one could set refit=False and load the best model from the filesystem to test its performance
+        #best_model = load_model(best_model_filename + '.h5')
 
-            # save best model performance on the validation set
-            val_file = open(best_model_filename + '.csv', 'w', newline='')
-            val_file.truncate(0)  # clean the file content (as we open the file in append mode)
-            val_writer = csv.DictWriter(val_file, fieldnames=VAL_HEADER)
-            val_writer.writeheader()
-            val_file.flush()
-            row = {'Model': model_name, 'Samples': Y_pred_val.shape[0], 'Accuracy': '{:05.4f}'.format(accuracy), 'F1Score': '{:05.4f}'.format(f1_score_val),
-                  'Hyper-parameters': rnd_search_cv.best_params_, "Validation Set": glob.glob(dataset_folder + "/*" + '-val.hdf5')[0]}
-            val_writer.writerow(row)
-            val_file.close()
+        # Y_pred_val = (best_model.predict(X_val) > 0.5)
+        # Y_true_val = Y_val.reshape((Y_val.shape[0], 1))
+        # f1_score_val = f1_score(Y_true_val, Y_pred_val)
+        # accuracy = accuracy_score(Y_true_val, Y_pred_val)
+
+        # save best model performance on the validation set
+        # val_file = open(best_model_filename + '.csv', 'w', newline='')
+        # val_file.truncate(0)  # clean the file content (as we open the file in append mode)
+        # val_writer = csv.DictWriter(val_file, fieldnames=VAL_HEADER)
+        # val_writer.writeheader()
+        # val_file.flush()
+        # row = {'Model': model_name, 'Samples': Y_pred_val.shape[0], 'Accuracy': '{:05.4f}'.format(accuracy), 'F1Score': '{:05.4f}'.format(f1_score_val),
+        #         'Hyper-parameters': rnd_search_cv.best_params_, "Validation Set": glob.glob(dataset_folder + "/*" + '-val.hdf5')[0]}
+        # val_writer.writerow(row)
+        # val_file.close()
 
 
-            print("Best parameters: ", rnd_search_cv.best_params_)
-            print("Best model path: ", best_model_filename)
-            print("F1 Score of the best model on the validation set: ", f1_score_val)
+        # print("Best parameters: ", rnd_search_cv.best_params_)
+        # print("Best model path: ", best_model_filename)
+        # print("F1 Score of the best model on the validation set: ", f1_score_val)
 
     if args.predict is not None:
         predict_file = open(OUTPUT_FOLDER + 'predictions-' + time.strftime("%Y%m%d-%H%M%S") + '.csv', 'a', newline='')

@@ -18,8 +18,8 @@ import h5py
 # frozen_graph_filename = "facemask"  #model name
 
 
-keras_model = "output/10t-10n-DOS2019-LUCID.h5"
-out_tflite = 'output/10t-10n-DOS2019-LUCID-quant-uint8.tflite'
+keras_model = "output/DOS2019-LUCID"
+out_tflite = 'output/DOS2019-LUCID-quant-uint8.tflite'
 
 dataset_folder = "sample-dataset"
 
@@ -42,11 +42,9 @@ def get_representative_dataset_gen():
         input_data = np.expand_dims(x, axis=0)
         input_data = input_data.astype(np.float32)
         yield [input_data]
-    #     input_data = np.expand_dims(img, axis=0)
-    #     #img = img_raw_rgb - 127
-    #     yield [input_data]
 
-def keras2tflite( model ):
+
+def keras2tflite(model):
 
     converter = tf.lite.TFLiteConverter.from_keras_model(model)
 
@@ -55,22 +53,17 @@ def keras2tflite( model ):
 
     converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
 
-    converter.inference_input_type = tf.uint8
-    converter.inference_output_type = tf.uint8
+    converter.inference_input_type = tf.int8
+    converter.inference_output_type = tf.int8
 
 
     tflite_model = converter.convert()
     open(out_tflite, "wb").write(tflite_model)
     print("successfully convert to tflite done")
     print("save model at: {}".format(out_tflite))
-    # tflite_model.summary()
 
 
-# def main(_):
 
-    # #keras to savemodel (.pb)
 model = tf.keras.models.load_model(keras_model, custom_objects={'tf': tf}, compile=False)
 model.summary()
 keras2tflite(model)
-
-# get_representative_dataset_gen()
