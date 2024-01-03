@@ -34,7 +34,6 @@ def count_packets_in_dataset(X_list):
     return packet_counters
 
 def main():
-    help_string = 'Usage: python3 lucid_cnn.py --train <dataset_folder> -e <epocs>'
 
     parser = argparse.ArgumentParser(
         description='DDoS attacks detection with convolutional neural networks',
@@ -144,7 +143,7 @@ def predict(args):
                 Y_pred.append(tmp > 0.5)
                 cnt += 1
 
-        # 正式预测
+        # Start inference
         for dataset_file in dataset_filelist:
             filename = dataset_file.split('/')[-1].strip()
             if filename_prefix in filename:
