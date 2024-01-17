@@ -9,3 +9,4 @@ pip3 install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 mkdir ./deepPacket/feature_dir
 mkdir ./deepPacket/output_dir
+mkdir pcaps

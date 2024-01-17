@@ -36,6 +36,10 @@ python main.py --traff_type <your_type> --feature_dir ./feature_dir/ --output_di
 ```
   
 #### Inference on i.MX
-Just run `./run_demo.sh`. 
+You should modify the `analysis_pkt.sh`. Change the `--model_path` option value to yours.
+Execute `./run_demo.sh`. 
 It will start tcpdump and web server processes.
+
 Now, you can access the report webpage by `http://<board_ip>:5000` in your PC browser.
+
+**Notice:** The model has concept drift problem, so different training sets should be used to update the model for different network environments.
