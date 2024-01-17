@@ -1,0 +1,6 @@
+*/.git/*
+*/feature_dir/*
+*.pickle
+*.h5
+*.csv
+*.png

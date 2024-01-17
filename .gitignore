@@ -1,0 +1,10 @@
+*.csv
+*.h5
+*.pcap
+*.npy
+*.tflite
+*.pickle
+*.md
+*.log
+__pycache__/*
+*/__pycache__/*

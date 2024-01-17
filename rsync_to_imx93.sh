@@ -1,0 +1,1 @@
+rsync -rlptDvz --progress --exclude-from=./exclude.list -e "ssh" --rsync-path=/usr/local/bin/rsync ../ETA_sys/ root@10.193.102.186:/home/root/NetworkingML
