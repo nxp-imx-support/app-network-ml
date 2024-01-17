@@ -1,3 +1,7 @@
+#
+# Copyright 2024 NXP
+#
+# SPDX-License-Identifier: BSD-3-Clause
 
 # max length for per packet bytes
 MAX_LENGTH = 1500

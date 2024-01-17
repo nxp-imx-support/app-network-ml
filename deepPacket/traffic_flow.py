@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-"""
-@File    :   traffic_flow.py
-@Time    :   2023/12/13 15:17:32
-@Author  :   Ziheng Xu
-@Desc    :   Define traffic five tuple and flow class
-"""
+#
+# Copyright 2024 NXP
+#
+# SPDX-License-Identifier: BSD-3-Clause
+# 
+# Define traffic five tuple and flow class
 
 class TrafficFlowKey(object):
     def __init__(self, src_ip: str, dst_ip: str, src_port: int, dst_port: int, proto: str):

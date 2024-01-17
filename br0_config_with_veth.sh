@@ -1,4 +1,7 @@
-# ip addr del $1 dev eth0
+#
+# Copyright 2024 NXP
+#
+# SPDX-License-Identifier: BSD-3-Clause
 
 ip link add name br0 type bridge
 ip link set br0 up

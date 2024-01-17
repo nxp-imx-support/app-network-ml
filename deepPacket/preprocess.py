@@ -1,20 +1,10 @@
 # -*- coding: utf-8 -*-
-"""
-@File    :   preprocess.py
-@Time    :   2023/09/07 11:04:54
-@Author  :   Ziheng Xu
-@Desc    :   Preprocess pcap files
-"""
-
-"""
-Remove Ethernet header
-Pad traffic with UDP header with zeros to the length of 20 bytes
-Mask the IP in the IP header
-Remove irrelevant packets such as packets with no payload or DNS packets
-Convert the raw packet into a bytes vector
-Truncate the vector of size more than 1500, pad zeros for the byte vector less than 1500
-Normalise the bytes vector by dividing each element by 255
-"""
+#
+# Copyright 2024 NXP
+#
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# Preprocess pcap file
 
 import dpkt
 import os

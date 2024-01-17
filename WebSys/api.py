@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-"""
-@File    :   api.py
-@Time    :   2024/01/09 21:08:14
-@Author  :   Ziheng Xu
-@Desc    :   Back-end api code
-"""
+#
+# Copyright 2024 NXP
+#
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# Back-end api code
 
 
 import sys

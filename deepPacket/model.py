@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-"""
-@File    :   model.py
-@Time    :   2023/09/07 11:05:53
-@Author  :   Ziheng Xu
-@Desc    :   DeepPacket Model
-"""
+#
+# Copyright 2024 NXP
+#
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# DeepPacket model
 
 import tensorflow as tf
 from keras import Model

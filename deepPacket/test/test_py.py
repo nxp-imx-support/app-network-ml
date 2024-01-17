@@ -1,3 +1,8 @@
+#
+# Copyright 2024 NXP
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 import sys
 sys.path.append("..")
 from traffic_flow import TrafficFlowKey

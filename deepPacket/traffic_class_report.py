@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
-"""
-@File    :   traffic_class_report.py
-@Time    :   2023/12/15 10:47:19
-@Author  :   Ziheng Xu
-@Desc    :   Parse inference result and print report
-"""
+#
+# Copyright 2024 NXP
+#
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# Parse inference result and print report (markdown)
+
 from traffic_flow import TrafficFlowKey
 import pickle
 import time

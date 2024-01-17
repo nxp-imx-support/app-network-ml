@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-"""
-@File    :   utils.py
-@Time    :   2023/09/07 11:05:19
-@Author  :   Ziheng Xu
-@Desc    :   None
-"""
+#
+# Copyright 2024 NXP
+#
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# Construct Dataset for training
 
 import numpy as np
 from sklearn.utils import shuffle

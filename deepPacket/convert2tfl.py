@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
-"""
-@File    :   convert2tfl.py
-@Time    :   2023/09/22 10:42:12
-@Author  :   Ziheng Xu
-@Desc    :   Convert & Quantification
-"""
+#
+# Copyright 2024 NXP
+#
+# SPDX-License-Identifier: BSD-3-Clause
+# 
+# Convert & Quantification
+
 
 import numpy as np
 import tensorflow as tf

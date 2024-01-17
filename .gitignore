@@ -4,7 +4,7 @@
 *.npy
 *.tflite
 *.pickle
-*.md
 *.log
 __pycache__/*
 */__pycache__/*
+*output_dir*

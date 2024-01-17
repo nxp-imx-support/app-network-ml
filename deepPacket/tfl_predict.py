@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-"""
-@File    :   tfl_predict.py
-@Time    :   2023/09/22 11:18:18
-@Author  :   Ziheng Xu
-@Desc    :   Inference using the quantized TFL model
-"""
+#
+# Copyright 2024 NXP
+#
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# Inference code on i.MX
 
 import argparse
 import tflite_runtime.interpreter as tflite

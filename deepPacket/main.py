@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-"""
-@File    :   main.py
-@Time    :   2023/09/08 11:08:47
-@Author  :   Ziheng Xu
-@Desc    :   
-"""
+#
+# Copyright 2024 NXP
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
+# Train and test model on host machine
 
 import os
 import tensorflow as tf

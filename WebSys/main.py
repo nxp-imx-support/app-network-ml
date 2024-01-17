@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
-"""
-@File    :   main.py
-@Time    :   2024/01/09 21:05:51
-@Author  :   Ziheng Xu
-@Desc    :   Flask app entry
-"""
+#
+# Copyright 2024 NXP
+#
+# SPDX-License-Identifier: BSD-3-Clause
 
 from flask import Flask, render_template, jsonify
 import api
