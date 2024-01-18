@@ -1,0 +1,12 @@
+*.csv
+*.h5
+*.pcap
+*.npy
+*.tflite
+*.pickle
+*.log
+__pycache__/*
+**/__pycache__/
+deepPacket/output_dir/
+deepPacket/feature_dir/
+
