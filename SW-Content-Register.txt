@@ -1,8 +1,8 @@
-Release Name: DeepPacket Demo
+Release Name: imx_deeppacket
 Release Version: 0.1
 Package License: LA_OPT_NXP_Software_License.txt - Production Use, Section 2.3 applies
 
-DeepPacket Demo Src        Name: Encrypted traffic classification system                      
+imx_deeppacket Src        Name: imx_deeppacket                      
                            Version: 0.1                                    
                            Outgoing License: BSD-3-Clause                    
                            License File: LICENSE                       
