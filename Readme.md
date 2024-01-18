@@ -4,7 +4,7 @@ The demo is based on this paper:
 
 > Lotfollahi, Mohammad, et al. "Deep packet: A novel approach for encrypted traffic classification using deep learning." Soft Computing 24.3 (2020): 1999-2012.
 
-#### setup
+#### Setup
 
 This demo was tested successfully on i.MX93 11x11 evk. You can download the BSP from [NXP website](https://www.nxp.com/design/design-center/software/embedded-software/i-mx-software/embedded-linux-for-i-mx-applications-processors:IMXLINUX). Here are the configuration on the i.MX boards. The configuarion on PC is omitted.
 
