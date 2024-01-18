@@ -22,8 +22,9 @@ This demo was tested successfully on i.MX93 11x11 evk. You can download the BSP 
 
 4. Run `br0_config_with_veth.sh` to configure the soft switch function. The .sh file will create a bridge to forward eth0 and eth1. At the same time, it will create a virtual interface veth0 for debugging and display of results. If all goes well, your PC can now access the Internet through i.MX93.
 #### Train model
+If you already have the tflite model we provided, you can **skip the training step**.
 The model should be trained on PC instead of  board.
-You can modify the `utils.py` to fit your dataset.
+You can modify `utils.py` to fit your dataset.
 
 These commands show preprocess, training and test processes.
 ```bash
@@ -36,7 +37,7 @@ python main.py --traff_type <your_type> --feature_dir ./feature_dir/ --output_di
 ```
   
 #### Inference on i.MX
-You should modify the `analysis_pkt.sh`. Change the `--model_path` option value to yours.
+You should modify `analysis_pkt.sh`. Change the `--model_path` option value to yours.
 Execute `./run_demo.sh`. 
 It will start tcpdump and web server processes.
 
