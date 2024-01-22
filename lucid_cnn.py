@@ -145,6 +145,7 @@ def main(argv):
         print("X_train shape: {}, Y_train shape: {}".format(X_train.shape, Y_train.shape))
 
         model_name = dataset_name + "-LUCID"
+        model_name = str(time_window) + 't-' + str(max_flow_len) + 'n-' + model_name
         model = Conv2DModel(model_name=model_name, input_shape=X_train.shape[1:], kernel_col=X_train.shape[2])
         model.fit(X_train, Y_train, epochs=args.epochs, validation_data=(X_val, Y_val))
 
