@@ -10,4 +10,4 @@ __pycache__/*
 deepPacket/output_dir/*
 deepPacket/feature_dir/
 
-!deepPacket/output_dir/nxp_model-uint8.tflite
+# !deepPacket/output_dir/nxp_model-uint8.tflite
