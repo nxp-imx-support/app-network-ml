@@ -1,4 +1,8 @@
-output/predictions-*
 output/*
+sample-dataset/*
+
+!output/.gitkeep
+!sample-dataset/.gitkeep
+
 __pycache__/*
 *.pyc
