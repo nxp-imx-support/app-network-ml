@@ -177,10 +177,10 @@ int start_capture() {
     return 0;
 }
 
-int offline_pcap_read() {
+int offline_pcap_read(const char* pcap_path, const char* pipe_name) {
     char err_buf[PCAP_ERRBUF_SIZE];
-    const char* pcap_file = "/home/nxg01813/Code/lucid-ddos/sample-dataset/CIC-DDoS-2019-Benign.pcap";
-    pcap_t* handle = pcap_open_offline(pcap_file, err_buf);
+    // const char* pcap_file = "/home/nxg01813/Code/lucid-ddos/sample-dataset/CIC-DDoS-2019-Benign.pcap";
+    pcap_t* handle = pcap_open_offline(pcap_path, err_buf);
     struct packet_list pkt_list;
 
     pcap_loop(handle, -1, my_packet_handler, (u_char*)&pkt_list);
@@ -198,16 +198,13 @@ int offline_pcap_read() {
     // fout.close();
 
     // To pipe
-    const char* fifoPath = "/tmp/pcap_fifo";
-    mkfifo(fifoPath, 0666);
-    std::ofstream fifoStream(fifoPath);
+    std::ofstream fifoStream(pipe_name);
     if (!fifoStream.is_open()) {
         std::cerr << "Error opening FIFO for writer." << std::endl;
         return -1;
     }
     fifoStream << jsonString;
     fifoStream.close();
-    unlink(fifoPath);
 
     return 0;
 }

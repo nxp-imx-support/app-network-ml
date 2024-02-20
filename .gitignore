@@ -2,9 +2,9 @@ output/*
 sample-dataset/*
 **/build
 
-!output/.gitkeep
-!sample-dataset/.gitkeep
+# !output/.gitkeep
+# !sample-dataset/.gitkeep
 
-__pycache__/*
+**/__pycache__/*
 *.pyc
 *.o
