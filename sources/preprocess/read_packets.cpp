@@ -12,10 +12,12 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <signal.h>
 
 using json = nlohmann::json;
 
 const int ETH_HDR_LEN = 14;
+pcap_t* live_handle = NULL;
 
 
 // extract packet info
@@ -131,14 +133,24 @@ json pkt_info_to_json(struct packet_list* pkt_list) {
     return j_ret;
 }
 
-int start_capture() {    
-    const char *device = "ens160";
+void alarm_handler(int sig) {
+    if (live_handle)
+        pcap_breakloop(live_handle);
+}
+
+/**
+ * Start live sniff
+ * args:
+ *  device - which network interface to sniff
+ *  cap_time - break sniff until cap_time seconds
+ *  cap_num - break sniff until cap_num, 0 or -1 represents infinity
+ *  pipe_name - fifo file to return packets info
+*/
+int start_capture(const char* device, int cap_time, int cap_num, const char* pipe_name) {    
     char error_buffer[PCAP_ERRBUF_SIZE];
-    pcap_t *handle;
-    /* Snapshot length is how many bytes to capture from each packet. This includes*/
+    // Snapshot length is how many bytes to capture from each packet.
+    // Do not need full packet size, a small value is enough for lucid-ddos
     int snapshot_length = 1024;
-    /* End the loop after this many packets are captured */
-    int total_packet_count = 100;
     u_char *my_arguments = NULL;
     char c;
 
@@ -156,23 +168,42 @@ int start_capture() {
 
     struct packet_list pkt_list;
 
-    handle = pcap_create(device, error_buffer);
-    if (handle == NULL) {
+    live_handle = pcap_create(device, error_buffer);
+    if (live_handle == NULL) {
         printf("Unable to open the capture device: %s\n", device);
-        return 0;
+        return -1;
     }
 
-    pcap_set_buffer_size(handle, 200 * 1024 * 1024);
-    pcap_set_timeout(handle, 20);
-    pcap_set_snaplen(handle, snapshot_length);
-    pcap_activate(handle);
-    printf("Starting capture on %s\n", device);
-    pcap_loop(handle, total_packet_count, my_packet_handler, (u_char*)&pkt_list);
+    pcap_set_buffer_size(live_handle, 200 * 1024 * 1024);
+    pcap_set_timeout(live_handle, 20);
+    pcap_set_snaplen(live_handle, snapshot_length);
 
-    pcap_close(handle);
+    // Regist SIGALRM for stopping capture when reaching timeout
+    alarm(cap_time);
+    signal(SIGALRM, alarm_handler);
+
+    pcap_activate(live_handle);
+    printf("Starting capture on %s\n", device);
+    pcap_loop(live_handle, cap_num, my_packet_handler, (u_char*)&pkt_list);
+
+    // According to pcap_dispatch doc, pcap_dispatch should be called once to avoid memory leak.
+    pcap_dispatch(live_handle, 1, my_packet_handler, (u_char*)&pkt_list);
+
+    pcap_close(live_handle);
 
     printf("pkt num: %ld\n", pkt_list.vec.size());
-    print_packet_info(&pkt_list.vec[6]);
+    // print_packet_info(&pkt_list.vec[6]);
+    // To pipe
+    json j_ret = pkt_info_to_json(&pkt_list);
+    std::string jsonString = j_ret.dump();
+    std::ofstream fifoStream(pipe_name);
+    if (!fifoStream.is_open()) {
+        std::cerr << "Error opening FIFO for writer." << std::endl;
+        return -1;
+    }
+    printf("Writing to pipe ...\n");
+    fifoStream << jsonString;
+    fifoStream.close();
 
     return 0;
 }
@@ -203,6 +234,7 @@ int offline_pcap_read(const char* pcap_path, const char* pipe_name) {
         std::cerr << "Error opening FIFO for writer." << std::endl;
         return -1;
     }
+    printf("Writing to pipe ...\n");
     fifoStream << jsonString;
     fifoStream.close();
 
