@@ -1,22 +1,5 @@
-# Copyright (c) 2022 @ FBK - Fondazione Bruno Kessler
-# Author: Roberto Doriguzzi-Corin
-# Project: LUCID: A Practical, Lightweight Deep Learning Solution for DDoS Attack Detection
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#   http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 import sys
 import time
-import pyshark
 import socket
 import pickle
 import random
@@ -27,6 +10,8 @@ from sklearn.feature_extraction.text import CountVectorizer
 from multiprocessing import Process, Manager, Value, Queue
 from util_functions import *
 import os
+import subprocess
+import json
 
 # Sample commands
 # split a pcap file into smaller chunks to leverage multi-core CPUs: tcpdump -r dataset.pcap -w dataset-chunk -C 1000
@@ -51,9 +36,6 @@ DDOS_ATTACK_SPECS = {
     'DOS2019': DOS2019_FLOWS
 }
 
-
-vector_proto = CountVectorizer()
-vector_proto.fit_transform(protocols).todense()
 
 random.seed(SEED)
 np.random.seed(SEED)
@@ -113,40 +95,36 @@ def parse_packet(pkt):
     tmp_id = [0,0,0,0,0]
 
     try:
-        pf.features_list.append(float(pkt.sniff_timestamp))  # timestampchild.find('Tag').text
-        pf.features_list.append(int(pkt.ip.len))  # packet length
-        pf.features_list.append(int(hashlib.sha256(str(pkt.highest_layer).encode('utf-8')).hexdigest(),
+        pf.features_list.append(float(pkt["sniff_time"]))  # timestampchild.find('Tag').text
+        pf.features_list.append(int(pkt["packet_length"]))  # packet length
+        pf.features_list.append(int(hashlib.sha256(str(pkt["highest_layer"]).encode('utf-8')).hexdigest(),
                                     16) % 10 ** 8)  # highest layer in the packet
-        pf.features_list.append(int(int(pkt.ip.flags, 16)))  # IP flags
-        tmp_id[0] = str(pkt.ip.src)  # int(ipaddress.IPv4Address(pkt.ip.src))
-        tmp_id[2] = str(pkt.ip.dst)  # int(ipaddress.IPv4Address(pkt.ip.dst))
+        pf.features_list.append(int(pkt["ip_flags"]))  # IP flags
+        tmp_id[0] = pkt["src_ip"]  # int(ipaddress.IPv4Address(pkt.ip.src))
+        tmp_id[2] = pkt["dst_ip"]  # int(ipaddress.IPv4Address(pkt.ip.dst))
 
-        protocols = vector_proto.transform([pkt.frame_info.protocols]).toarray().tolist()[0]
-        protocols = [1 if i >= 1 else 0 for i in
-                     protocols]  # we do not want the protocols counted more than once (sometimes they are listed twice in pkt.frame_info.protocols)
-        protocols_value = int(np.dot(np.array(protocols), powers_of_two))
-        pf.features_list.append(protocols_value)
+        pf.features_list.append(int(pkt["protocols_stack"]))
 
-        protocol = int(pkt.ip.proto)
+        protocol = pkt["proto_type"]
         tmp_id[4] = protocol
-        if pkt.transport_layer != None:
-            if protocol == socket.IPPROTO_TCP:
-                tmp_id[1] = int(pkt.tcp.srcport)
-                tmp_id[3] = int(pkt.tcp.dstport)
-                pf.features_list.append(int(pkt.tcp.len))  # TCP length
-                pf.features_list.append(int(pkt.tcp.ack))  # TCP ack
-                pf.features_list.append(int(pkt.tcp.flags, 16))  # TCP flags
-                pf.features_list.append(int(pkt.tcp.window_size_value))  # TCP window size
-                pf.features_list = pf.features_list + [0, 0]  # UDP + ICMP positions
-            elif protocol == socket.IPPROTO_UDP:
-                pf.features_list = pf.features_list + [0, 0, 0, 0]  # TCP positions
-                tmp_id[1] = int(pkt.udp.srcport)
-                pf.features_list.append(int(pkt.udp.length))  # UDP length
-                tmp_id[3] = int(pkt.udp.dstport)
-                pf.features_list = pf.features_list + [0]  # ICMP position
-        elif protocol == socket.IPPROTO_ICMP:
+
+        if protocol == "tcp":
+            tmp_id[1] = int(pkt["src_port"])
+            tmp_id[3] = int(pkt["dst_port"])
+            pf.features_list.append(int(pkt["tcp_len"]))  # TCP length
+            pf.features_list.append(int(pkt["tcp_ack"]))  # TCP ack
+            pf.features_list.append(int(pkt["tcp_flags"]))  # TCP flags
+            pf.features_list.append(int(pkt["tcp_win"]))  # TCP window size
+            pf.features_list = pf.features_list + [0, 0]  # UDP + ICMP positions
+        elif protocol == "udp":
+            pf.features_list = pf.features_list + [0, 0, 0, 0]  # TCP positions
+            tmp_id[1] = int(pkt["src_port"])
+            pf.features_list.append(int(pkt["udp_len"]))  # UDP length
+            tmp_id[3] = int(pkt["dst_port"])
+            pf.features_list = pf.features_list + [0]  # ICMP position
+        elif protocol == "icmp":
             pf.features_list = pf.features_list + [0, 0, 0, 0, 0]  # TCP and UDP positions
-            pf.features_list.append(int(pkt.icmp.type))  # ICMP type
+            pf.features_list.append(int(pkt["icmp_type"]))  # ICMP type
         else:
             pf.features_list = pf.features_list + [0, 0, 0, 0, 0, 0]  # padding for layer3-only packets
             tmp_id[4] = 0
@@ -161,7 +139,7 @@ def parse_packet(pkt):
         return None
 
 # Offline preprocessing of pcap files for model training, validation and testing
-def process_pcap(pcap_file,dataset_type,in_labels,max_flow_len,labelled_flows,max_flows=0, traffic_type='all',time_window=TIME_WINDOW):
+def process_pcap(pcap_file,th_id,in_labels,max_flow_len,labelled_flows,max_flows=0, traffic_type='all',time_window=TIME_WINDOW):
     start_time = time.time()
     temp_dict = OrderedDict()
     start_time_window = -1
@@ -169,14 +147,24 @@ def process_pcap(pcap_file,dataset_type,in_labels,max_flow_len,labelled_flows,ma
     pcap_name = pcap_file.split("/")[-1]
     print("Processing file: ", pcap_name)
 
-    cap = pyshark.FileCapture(pcap_file)
-    for i, pkt in enumerate(cap):
+    pipe_name = "/tmp/pcap_read{}".format(th_id)
+    os.mkfifo(pipe_name)
+    cmd = [pcap_parser_path, pcap_file, pipe_name]
+    p = subprocess.Popen(cmd, shell=False)
+    with open(pipe_name, "r") as fifo_file:
+        data_str = fifo_file.read()
+
+    pkts = json.loads(data_str)["ret_arr"]
+    p.wait()
+    os.remove(pipe_name)
+
+    for i, pkt in enumerate(pkts):
         if i % 1000 == 0:
             print(pcap_name + " packet #", i)
 
         # start_time_window is used to group packets/flows captured in a time-window
-        if start_time_window == -1 or float(pkt.sniff_timestamp) > start_time_window + time_window:
-            start_time_window = float(pkt.sniff_timestamp)
+        if start_time_window == -1 or float(pkt["sniff_time"]) > start_time_window + time_window:
+            start_time_window = float(pkt["sniff_time"])
 
         pf = parse_packet(pkt)
         store_packet(pf, temp_dict, start_time_window, max_flow_len)
@@ -195,21 +183,32 @@ def process_live_traffic(cap, dataset_type, in_labels, max_flow_len, traffic_typ
     start_time_window = start_time
     time_window = start_time_window + time_window
 
-    if isinstance(cap, pyshark.LiveCapture) == True:
-        for pkt in cap.sniff_continuously():
-            if time.time() >= time_window:
-                break
-            pf = parse_packet(pkt)
-            temp_dict = store_packet(pf, temp_dict, start_time_window, max_flow_len)
-    elif isinstance(cap, pyshark.FileCapture) == True:
-        while time.time() < time_window:
-            try:
-                pkt = cap.next()
-                pf = parse_packet(pkt)
-                temp_dict = store_packet(pf,temp_dict,start_time_window,max_flow_len)
-            except:
-                break
+    pipe_name = "/tmp/live_read"
+    # if os.path.exists(pipe_name):
+    #     os.remove(pipe_name)
+    # os.mkfifo(pipe_name, 0o666)
+    # os.chmod(pipe_name, 0o666)
+    cmd = ["sudo", live_parser_path, "ens160", str(TIME_WINDOW), "0", pipe_name]
+    p = subprocess.Popen(cmd, shell=False)
+    time.sleep(1)
+    with open(pipe_name, "r") as fifo_file:
+        data_str = fifo_file.read()
 
+    data = json.loads(data_str)
+    p.wait()
+    # os.remove(pipe_name)
+
+    print(len(data["ret_arr"]))
+
+    for pkt in data["ret_arr"]:
+        print(pkt)
+        break
+    
+    print('Completed capture in {} seconds.'.format(time.time() - start_time))
+
+    for pkt in data["ret_arr"]:
+        pf = parse_packet(pkt)
+        temp_dict = store_packet(pf, temp_dict, start_time_window, max_flow_len)
     apply_labels(temp_dict,labelled_flows, in_labels,traffic_type)
     return labelled_flows
 
@@ -403,10 +402,12 @@ def main(argv):
         in_labels = parse_labels(args.dataset_type[0],args.dataset_folder[0],label=args.label)
 
         start_time = time.time()
+        th_id = 0
         for file in filelist:
             try:
                 flows = manager.list()
-                p = Process(target=process_pcap,args=(file,args.dataset_type[0],in_labels,max_flow_len,flows,args.max_flows, traffic_type,time_window))
+                p = Process(target=process_pcap,args=(file,th_id,in_labels,max_flow_len,flows,args.max_flows, traffic_type,time_window))
+                th_id += 1
                 process_list.append(p)
                 flows_list.append(flows)
             except FileNotFoundError as e:

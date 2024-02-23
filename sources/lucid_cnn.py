@@ -25,6 +25,7 @@ import os
 import csv
 import pprint
 from util_functions import *
+from lucid_dataset_parser import *
 # Seed Random Numbers
 os.environ['PYTHONHASHSEED']=str(SEED)
 np.random.seed(SEED)
@@ -40,7 +41,6 @@ from sklearn.utils import shuffle
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from tensorflow.keras.wrappers.scikit_learn import KerasClassifier
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
-from lucid_dataset_parser import *
 
 import tensorflow.keras.backend as K
 tf.random.set_seed(SEED)
@@ -250,14 +250,10 @@ def main(argv):
         predict_file.flush()
 
         if args.predict_live is None:
-            print("Please specify a valid network interface or pcap file!")
+            print("Please specify a valid network interface!")
             exit(-1)
-        elif args.predict_live.endswith('.pcap'):
-            pcap_file = args.predict_live
-            cap = pyshark.FileCapture(pcap_file)
-            data_source = pcap_file.split('/')[-1].strip()
         else:
-            cap =  pyshark.LiveCapture(interface=args.predict_live)
+            cap = args.predict_live
             data_source = args.predict_live
 
         print ("Prediction on network traffic from: ", data_source)
@@ -266,7 +262,7 @@ def main(argv):
         labels = parse_labels(args.dataset_type, args.attack_net, args.victim_net)
 
         # do not forget command sudo ./jetson_clocks.sh on the TX2 board before testing
-        if args.model is not None and args.model.endswith('.h5'):
+        if args.model is not None:
             model_path = args.model
         else:
             print ("No valid model specified!")
@@ -300,10 +296,6 @@ def main(argv):
                 [packets] = count_packets_in_dataset([X])
                 report_results(np.squeeze(Y_true), Y_pred, packets, model_name_string, data_source, prediction_time,predict_writer)
                 predict_file.flush()
-
-            elif isinstance(cap, pyshark.FileCapture) == True:
-                print("\nNo more packets in file ", data_source)
-                break
 
         predict_file.close()
 

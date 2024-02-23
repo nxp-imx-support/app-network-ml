@@ -198,7 +198,7 @@ int start_capture(const char* device, int cap_time, int cap_num, const char* pip
     std::string jsonString = j_ret.dump();
     std::ofstream fifoStream(pipe_name);
     if (!fifoStream.is_open()) {
-        std::cerr << "Error opening FIFO for writer." << std::endl;
+        std::cerr << "Error opening FIFO for writer: " << pipe_name << std::endl;
         return -1;
     }
     printf("Writing to pipe ...\n");

@@ -9,8 +9,10 @@ import tflite_runtime.interpreter as tflite
 from sklearn.metrics import f1_score, accuracy_score, confusion_matrix
 import argparse
 import time
+from lucid_dataset_parser import process_live_traffic, dataset_to_list_of_fragments
+from util_functions import static_min_max, normalize_and_padding
 
-OUTPUT_FOLDER = "./output/"
+OUTPUT_FOLDER = "../output/"
 PREDICT_HEADER = ['Model', 'Time', 'Packets', 'Samples', 'DDOS%', 'Accuracy', 'F1Score', 'TPR', 'FPR','TNR', 'FNR', 'Source']
 DEFAULT_EPOCHS = 100
 
@@ -32,6 +34,17 @@ def count_packets_in_dataset(X_list):
         TOT = X.sum(axis=2)
         packet_counters.append(np.count_nonzero(TOT))
     return packet_counters
+
+
+def load_tfl_model(path, ext_delegate, ext_opt):
+    ext_dele = None
+    if ext_delegate is not None:
+        print("Loading external delegate from {} with options: {}".format(ext_delegate, ext_opt))
+        ext_dele = [tflite.load_delegate(ext_delegate, ext_opt)]
+
+    model = tflite.Interpreter(model_path=path, experimental_delegates=ext_dele)
+    return model
+
 
 def main():
 
@@ -74,7 +87,50 @@ def main():
     if os.path.isdir(OUTPUT_FOLDER) == False:
         os.mkdir(OUTPUT_FOLDER)
 
-    predict(args)
+    if args.predict is not None:
+        predict(args)
+    elif args.predict_live is not None:
+        predict_live(args)
+
+def inference_process(model, X):
+    model.allocate_tensors()
+    input_desc = model.get_input_details()[0]
+    output_desc = model.get_output_details()[0]
+    print("input_desc_type {}".format(input_desc['dtype']))
+    input_scale, input_zero_point = input_desc['quantization']
+    print("input_scale: {}; input_zero_point: {}".format(input_scale, input_zero_point))
+
+    cnt = 0
+    # warmup
+    for vec in X:
+        if cnt > 10:
+            break
+        input_data = vec / input_scale + input_zero_point
+        input_data = np.expand_dims(input_data, axis=0).astype(input_desc["dtype"])
+        model.set_tensor(input_desc['index'], input_data)
+        model.invoke()
+        tmp = np.squeeze(model.get_tensor(output_desc['index']))
+        tmp = input_scale * (tmp - input_zero_point)
+        cnt += 1
+
+    # start inference
+    Y_pred = list()
+    avg_time = 0
+    delta = 0
+    
+    for vec in X:
+        input_data = vec / input_scale + input_zero_point
+        input_data = np.expand_dims(input_data, axis=0).astype(input_desc["dtype"])
+        model.set_tensor(input_desc['index'], input_data)
+        pt0 = time.time()
+        model.invoke()
+        delta = time.time() - pt0
+        tmp = np.squeeze(model.get_tensor(output_desc['index']))
+        tmp = input_scale * (tmp - input_zero_point)
+        Y_pred.append(tmp > 0.5)
+        avg_time += delta
+    Y_pred = np.array(Y_pred)
+    return Y_pred
 
 
 def predict(args):
@@ -86,90 +142,135 @@ def predict(args):
     predict_writer.writeheader()
     predict_file.flush()
 
-    ext_delegate = None
     ext_delegate_options = {}
-
-    iterations = args.iterations
     # ['./sample-dataset/10t-10n-DOS2019-dataset-test.hdf5']
     dataset_filelist = glob.glob(args.predict + "/*test.hdf5")
 
-    # load external delegate
-    if args.ext_delegate is not None:
-        print('Loading external delegate from {} with args: {}'.format(
-            args.ext_delegate, ext_delegate_options))
-        ext_delegate = [
-            tflite.load_delegate(args.ext_delegate, ext_delegate_options)
-        ]
-
     if args.model is not None:
-        model_list = [args.model]
+        model_path = args.model
     else:
-        model_list = glob.glob(args.predict + "/*.h5")
+        print ("No valid model specified!")
+        exit(-1)
     # model_path: ./output/10t-10n-DOS2019-LUCID.tflite
-    for model_path in model_list:
-        # 10t-10n-DOS2019-LUCID.tflite
-        model_filename = model_path.split('/')[-1].strip()
-        # 10t-10n
-        filename_prefix = model_filename.split('-')[0].strip() + '-' + model_filename.split('-')[1].strip() + '-'
-        # DOS2019-LUCID
-        model_name_string = model_filename.split(filename_prefix)[1].strip().split('.')[0].strip()
-        # model = tf.lite.Interpreter(model_path=model_path)
-        model = tflite.Interpreter(model_path=model_path, experimental_delegates=ext_delegate)
-        model.allocate_tensors()
+    # 10t-10n-DOS2019-LUCID.tflite
+    model_filename = model_path.split('/')[-1].strip()
+    # 10t-10n
+    filename_prefix = model_filename.split('-')[0].strip() + '-' + model_filename.split('-')[1].strip() + '-'
+    # DOS2019-LUCID
+    model_name_string = model_filename.split(filename_prefix)[1].strip().split('.')[0].strip()
+    # model = tf.lite.Interpreter(model_path=model_path)
+    model = load_tfl_model(model_path, args.ext_delegate, ext_delegate_options)
+    model.allocate_tensors()
 
-        input_desc = model.get_input_details()[0]
-        output_desc = model.get_output_details()[0]
+    input_desc = model.get_input_details()[0]
+    output_desc = model.get_output_details()[0]
 
-        print("input_desc_type {}".format(input_desc['dtype']))
-        input_scale, input_zero_point = input_desc['quantization']
-        print("input_scale: {}; input_zero_point: {}".format(input_scale, input_zero_point))
-        
-        # warming up the model (necessary for the GPU)
-        warm_up_file = dataset_filelist[0]
-        filename = warm_up_file.split('/')[-1].strip()
+    print("input_desc_type {}".format(input_desc['dtype']))
+    input_scale, input_zero_point = input_desc['quantization']
+    print("input_scale: {}; input_zero_point: {}".format(input_scale, input_zero_point))
+    
+    # warming up the model (necessary for the GPU)
+    warm_up_file = dataset_filelist[0]
+    filename = warm_up_file.split('/')[-1].strip()
+    if filename_prefix in filename:
+        X, Y = load_dataset(warm_up_file)
+        Y_pred = list()
+        cnt = 0
+        for vec in X:
+            if cnt > 10:
+                break
+            input_data = vec / input_scale + input_zero_point
+            input_data = np.expand_dims(input_data, axis=0).astype(input_desc["dtype"])
+            model.set_tensor(input_desc['index'], input_data)
+            model.invoke()
+            tmp = np.squeeze(model.get_tensor(output_desc['index']))
+            tmp = input_scale * (tmp - input_zero_point)
+            Y_pred.append(tmp > 0.5)
+            cnt += 1
+
+    # Start inference
+    for dataset_file in dataset_filelist:
+        filename = dataset_file.split('/')[-1].strip()
         if filename_prefix in filename:
-            X, Y = load_dataset(warm_up_file)
+            X, Y = load_dataset(dataset_file)
+            [packets] = count_packets_in_dataset([X])
+
             Y_pred = list()
-            cnt = 0
+            Y_true = Y
+            avg_time = 0
+            delta = 0
+            
             for vec in X:
-                if cnt > 10:
-                    break
                 input_data = vec / input_scale + input_zero_point
                 input_data = np.expand_dims(input_data, axis=0).astype(input_desc["dtype"])
                 model.set_tensor(input_desc['index'], input_data)
+                pt0 = time.time()
                 model.invoke()
+                delta = time.time() - pt0
                 tmp = np.squeeze(model.get_tensor(output_desc['index']))
                 tmp = input_scale * (tmp - input_zero_point)
                 Y_pred.append(tmp > 0.5)
-                cnt += 1
+                avg_time += delta
+            Y_pred = np.array(Y_pred)
 
-        # Start inference
-        for dataset_file in dataset_filelist:
-            filename = dataset_file.split('/')[-1].strip()
-            if filename_prefix in filename:
-                X, Y = load_dataset(dataset_file)
-                [packets] = count_packets_in_dataset([X])
+            report_results(np.squeeze(Y_true), Y_pred, packets, model_name_string, filename, avg_time,predict_writer)
+            predict_file.flush()
+    predict_file.close()
 
-                Y_pred = list()
-                Y_true = Y
-                avg_time = 0
-                delta = 0
-                
-                for vec in X:
-                    input_data = vec / input_scale + input_zero_point
-                    input_data = np.expand_dims(input_data, axis=0).astype(input_desc["dtype"])
-                    model.set_tensor(input_desc['index'], input_data)
-                    pt0 = time.time()
-                    model.invoke()
-                    delta = time.time() - pt0
-                    tmp = np.squeeze(model.get_tensor(output_desc['index']))
-                    tmp = input_scale * (tmp - input_zero_point)
-                    Y_pred.append(tmp > 0.5)
-                    avg_time += delta
-                Y_pred = np.array(Y_pred)
 
-                report_results(np.squeeze(Y_true), Y_pred, packets, model_name_string, filename, avg_time,predict_writer)
-                predict_file.flush()
+def predict_live(args):
+    predict_file = open(OUTPUT_FOLDER + 'predictions-' + time.strftime("%Y%m%d-%H%M%S") + '.csv', 'a', newline='')
+    predict_file.truncate(0)  # clean the file content (as we open the file in append mode)
+    predict_writer = csv.DictWriter(predict_file, fieldnames=PREDICT_HEADER)
+    predict_writer.writeheader()
+    predict_file.flush()
+
+    if args.predict_live is None:
+        print("Please specify a valid network interface!")
+        exit(-1)
+    else:
+        cap = args.predict_live
+        data_source = args.predict_live
+
+    print ("Prediction on network traffic from: ", data_source)
+
+    # load the labels, if available
+    # labels = parse_labels(args.dataset_type, args.attack_net, args.victim_net)
+    labels = None
+
+    # do not forget command sudo ./jetson_clocks.sh on the TX2 board before testing
+    if args.model is not None:
+        model_path = args.model
+    else:
+        print ("No valid model specified!")
+        exit(-1)
+
+    model_filename = model_path.split('/')[-1].strip()
+    filename_prefix = model_filename.split('n')[0] + 'n-'
+    time_window = int(filename_prefix.split('t-')[0])
+    max_flow_len = int(filename_prefix.split('t-')[1].split('n-')[0])
+    model_name_string = model_filename.split(filename_prefix)[1].strip().split('.')[0].strip()
+    ext_delegate_options = {}
+    model = load_tfl_model(model_path, args.ext_delegate, ext_delegate_options)
+
+    mins, maxs = static_min_max(time_window)
+
+    while (True):
+        samples = process_live_traffic(cap, args.dataset_type, labels, max_flow_len, traffic_type="all", time_window=time_window)
+        if len(samples) > 0:
+            X,Y_true,keys = dataset_to_list_of_fragments(samples)
+            X = np.array(normalize_and_padding(X, mins, maxs, max_flow_len))
+
+            X = np.expand_dims(X, axis=3)
+            pt0 = time.time()
+            Y_pred = inference_process(model, X)
+            pt1 = time.time()
+            prediction_time = pt1 - pt0
+
+            [packets] = count_packets_in_dataset([X])
+            report_results(np.squeeze(Y_true), Y_pred, packets, model_name_string, data_source, prediction_time,predict_writer)
+            predict_file.flush()
+
     predict_file.close()
 
 

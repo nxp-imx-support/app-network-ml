@@ -18,10 +18,10 @@ import h5py
 # frozen_graph_filename = "facemask"  #model name
 
 
-keras_model = "output/DOS2019-LUCID"
-out_tflite = 'output/DOS2019-LUCID-quant-uint8.tflite'
+keras_model = "../output/10t-10n-DOS2019-LUCID"
+out_tflite = '../output/10t-10n-DOS2019-LUCID-quant-uint8.tflite'
 
-dataset_folder = "sample-dataset"
+dataset_folder = "../sample-dataset"
 
 def load_dataset(path):
     filename = glob.glob(path)[0]
