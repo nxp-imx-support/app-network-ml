@@ -21,8 +21,8 @@ from collections import OrderedDict
 
 # Configuration for preprocess pcap
 capture_interface = "ens160"
-pcap_parser_path = "/home/nxg01813/Code/lucid-ddos/sources/preprocess/build/pcap_parser"
-live_parser_path = "/home/nxg01813/Code/lucid-ddos/sources/preprocess/build/live_parser"
+pcap_parser_path = "./preprocess/build/pcap_parser"
+live_parser_path = "./preprocess/build/live_parser"
 
 SEED = 1
 MAX_FLOW_LEN = 100 # number of packets

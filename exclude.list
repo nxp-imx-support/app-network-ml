@@ -1,0 +1,12 @@
+*/.git/*
+*/feature_dir/*
+*/build/*
+*/__pycache__/*
+*.pickle
+*.h5
+*.csv
+*.png
+*.pcap
+*.data
+*.log
+

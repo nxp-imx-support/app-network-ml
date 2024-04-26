@@ -7,7 +7,7 @@ import hashlib
 import argparse
 import ipaddress
 from sklearn.feature_extraction.text import CountVectorizer
-from multiprocessing import Process, Manager, Value, Queue
+from multiprocessing import Process, Manager, Value, Queue, Pool
 from util_functions import *
 import os
 import subprocess
@@ -139,7 +139,7 @@ def parse_packet(pkt):
         return None
 
 # Offline preprocessing of pcap files for model training, validation and testing
-def process_pcap(pcap_file,th_id,in_labels,max_flow_len,labelled_flows,max_flows=0, traffic_type='all',time_window=TIME_WINDOW):
+def process_pcap(pcap_file, th_id, in_labels, max_flow_len, labelled_flows, max_flows=0, traffic_type='all', time_window=TIME_WINDOW):
     start_time = time.time()
     temp_dict = OrderedDict()
     start_time_window = -1
@@ -188,7 +188,7 @@ def process_live_traffic(cap, dataset_type, in_labels, max_flow_len, traffic_typ
     #     os.remove(pipe_name)
     # os.mkfifo(pipe_name, 0o666)
     # os.chmod(pipe_name, 0o666)
-    cmd = ["sudo", live_parser_path, "ens160", str(TIME_WINDOW), "0", pipe_name]
+    cmd = [live_parser_path, cap, str(TIME_WINDOW), "0", pipe_name]
     p = subprocess.Popen(cmd, shell=False)
     time.sleep(1)
     with open(pipe_name, "r") as fifo_file:
@@ -390,7 +390,7 @@ def main(argv):
         traffic_type = 'all'
 
     if args.dataset_folder is not None and args.dataset_type is not None:
-        process_list = []
+        process_pool = Pool(processes=1)
         flows_list = []
 
         if args.output_folder is not None and os.path.isdir(args.output_folder[0]) is True:
@@ -399,25 +399,28 @@ def main(argv):
             output_folder = args.dataset_folder[0]
 
         filelist = glob.glob(args.dataset_folder[0]+ '/*.pcap')
-        in_labels = parse_labels(args.dataset_type[0],args.dataset_folder[0],label=args.label)
+        in_labels = parse_labels(args.dataset_type[0], args.dataset_folder[0], label=args.label)
 
         start_time = time.time()
         th_id = 0
         for file in filelist:
             try:
                 flows = manager.list()
-                p = Process(target=process_pcap,args=(file,th_id,in_labels,max_flow_len,flows,args.max_flows, traffic_type,time_window))
+                process_pool.apply_async(process_pcap, (file, th_id, in_labels, max_flow_len, flows, args.max_flows, traffic_type, time_window))
+                # p = Process(target=process_pcap,args=(file,th_id,in_labels,max_flow_len,flows,args.max_flows, traffic_type,time_window))
                 th_id += 1
-                process_list.append(p)
+                # process_list.append(p)
                 flows_list.append(flows)
             except FileNotFoundError as e:
                 continue
 
-        for p in process_list:
-            p.start()
+        # for p in process_list:
+        #     p.start()
 
-        for p in process_list:
-            p.join()
+        # for p in process_list:
+        #     p.join()
+        process_pool.close()
+        process_pool.join()
 
         np.seterr(divide='ignore', invalid='ignore')
         try:
