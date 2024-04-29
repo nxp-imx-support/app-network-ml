@@ -1,0 +1,1 @@
+int dpdk_l2capfwd_main(int argc, char **argv);
