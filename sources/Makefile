@@ -5,7 +5,8 @@
 APP = l2capfwd
 
 # all source are stored in SRCS-y
-SRCS-y := preprocess/dpdk-l2capfwd.cpp preprocess/main.cpp preprocess/extract_protocols.cpp
+SRCS-y := preprocess/dpdk-l2capfwd.cpp preprocess/main.cpp preprocess/extract_protocols.cpp preprocess/fifo_utils.cpp
+SRCS-test := preprocess/test.cpp preprocess/extract_protocols.cpp preprocess/fifo_utils.cpp
 
 PKGCONF ?= pkg-config
 
@@ -14,10 +15,11 @@ ifneq ($(shell $(PKGCONF) --exists libdpdk && echo 0),0)
 $(error "no installation of DPDK found")
 endif
 
-all: static
+all: static test
 .PHONY: shared static
 shared: build/$(APP)-shared
 static: build/$(APP)
+test: build/test
 
 PC_FILE := $(shell $(PKGCONF) --path libdpdk 2>/dev/null)
 CFLAGS += -O3 $(shell $(PKGCONF) --cflags libdpdk)
@@ -40,10 +42,12 @@ build/$(APP)-shared: $(SRCS-y) Makefile $(PC_FILE) | build
 build/$(APP): $(SRCS-y) Makefile $(PC_FILE) | build
 	$(CC) $(CFLAGS) $(SRCS-y) -o $@ $(LDFLAGS) $(LDFLAGS_STATIC)
 
+build/test: $(SRCS-test) Makefile | build
+	$(CC) $(CFLAGS) $(SRCS-test) -o $@ $(LDFLAGS) $(LDFLAGS_STATIC)
+
 build:
 	@mkdir -p $@
 
 .PHONY: clean
 clean:
-	rm -f build/$(APP) build/$(APP)-static build/$(APP)-shared
-	test -d build && rmdir -p build || true
+	rm -rf build

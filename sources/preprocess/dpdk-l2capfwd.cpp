@@ -140,9 +140,9 @@ print_stats(void)
 		if ((l2fwd_enabled_port_mask & (1 << portid)) == 0)
 			continue;
 		printf("\nStatistics for port %u ------------------------------"
-			   "\nPackets sent: %24"PRIu64
-			   "\nPackets received: %20"PRIu64
-			   "\nPackets dropped: %21"PRIu64,
+			   "\nPackets sent: %24" PRIu64
+			   "\nPackets received: %20" PRIu64
+			   "\nPackets dropped: %21" PRIu64,
 			   portid,
 			   port_statistics[portid].tx,
 			   port_statistics[portid].rx,
@@ -153,9 +153,9 @@ print_stats(void)
 		total_packets_rx += port_statistics[portid].rx;
 	}
 	printf("\nAggregate statistics ==============================="
-		   "\nTotal packets sent: %18"PRIu64
-		   "\nTotal packets received: %14"PRIu64
-		   "\nTotal packets dropped: %15"PRIu64,
+		   "\nTotal packets sent: %18" PRIu64
+		   "\nTotal packets received: %14" PRIu64
+		   "\nTotal packets dropped: %15" PRIu64,
 		   total_packets_tx,
 		   total_packets_rx,
 		   total_packets_dropped);
@@ -280,6 +280,7 @@ l2fwd_cap_forward(struct rte_mbuf *pkt, unsigned portid) {
 static void
 l2fwd_main_loop(void)
 {
+	printf("currend pid: %d, current tid: %d, pthread tid: %ld\n", getpid(), rte_gettid(), pthread_self());
 	struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
 	struct rte_mbuf *m;
 	int sent;
@@ -346,6 +347,7 @@ l2fwd_main_loop(void)
 					/* do this only on main core */
 					if (lcore_id == rte_get_main_lcore()) {
 						// print_stats();
+						flow_table_inference();
 						/* reset the timer */
 						timer_tsc = 0;
 					}
@@ -1018,6 +1020,8 @@ dpdk_l2capfwd_main(int argc, char **argv)
 		printf(" Done\n");
 	}
 
+	// Clean up flow table
+	v4_flow_table_cleanup();
 	/* clean up the EAL */
 	rte_eal_cleanup();
 	printf("Bye...\n");

@@ -7,9 +7,24 @@
 #include <stdlib.h>
 #include <unordered_map>
 #include <sys/time.h>
+#include <unistd.h>
+#include <sys/syscall.h>
+#include <pthread.h>
+#include <fstream>
+#include "fifo_utils.h"
 
-std::unordered_map<int, std::vector<struct v4_packet_info*>> v4_flow_table;
-std::unordered_map<int, std::vector<struct v6_packet_info*>> v6_flow_table;
+/* IPv4 and IPv6 flow table */
+std::unordered_map<uint64_t, std::vector<struct v4_packet_info*>> v4_flow_table;
+std::unordered_map<uint64_t, std::vector<struct v6_packet_info*>> v6_flow_table;
+
+/* Flow flag 
+ * flag value: int 
+ * 0 == Unknown
+ * 1 == DDoS
+ * 2 == Begin
+ */
+std::unordered_map<uint64_t, int> flow_flag;
+
 uint64_t cnt;
 
 struct v4_packet_info* alloc_v4_packet_info() {
@@ -137,20 +152,43 @@ void order_trans_ports(void* flow_key, bool is_ipv4) {
             flow_key_ptr->ip_src = tmp_ip;
         }
     } else {
-
+        // TODO ipv6
     }
+}
+
+uint64_t calculate_flow_hash_key(uint64_t* block, size_t blk_size) {
+    uint64_t ret = 0;
+    const uint64_t *mask = NULL;
+    std::hash<uint64_t> u64_hash;
+    if (blk_size == V4_FLOW_KEY_SIZE) 
+        mask = v4_key_mask;
+    else if (blk_size = V6_FLOW_KEY_SIZE)
+        mask = v6_key_mask;
+    else {
+        LOG_ERROR("blk size is invalid\n");
+        return ret;
+    }
+
+    LOG_DEBUG("u64_hash(");
+    for (size_t i = 0; i < blk_size; ++i) {
+        ret ^= u64_hash(block[i] & mask[i]);
+        LOG_DEBUG("%016lx ", block[i] & mask[i]);
+    }
+    LOG_DEBUG(")\n");
+
+    return ret;
 }
 
 void handle_protocol_stack(struct rte_mbuf *pkt) {
     cnt += 1;
-    printf("No#%lu\n", cnt);
+    LOG_DEBUG("No#%lu\n", cnt);
     // Point to protocol header fileds
     uint8_t* pro_ptr = NULL;
 
     struct rte_ether_hdr *eth_hdr = rte_pktmbuf_mtod(pkt, struct rte_ether_hdr *);
     if (is_valid_ether_pkt(eth_hdr, pkt->pkt_len) < 0) {
         rte_pktmbuf_free(pkt);
-        printf("invalid ehter packet.\n");
+        LOG_ERROR("invalid ehter packet.\n");
         return;
     }
     pro_ptr = (uint8_t*)eth_hdr;
@@ -167,7 +205,7 @@ void handle_protocol_stack(struct rte_mbuf *pkt) {
         ipv4_hdr = (struct rte_ipv4_hdr*)(pro_ptr + sizeof(struct rte_ether_hdr));
 	
         if (int ret = is_valid_ipv4_pkt(ipv4_hdr, pkt->pkt_len) < 0) {
-            printf("invalid ipv4 packet. error code: %d\n", ret);
+            LOG_ERROR("invalid ipv4 packet. error code: %d\n", ret);
             rte_pktmbuf_free(pkt);
             return;
         }
@@ -190,7 +228,7 @@ void handle_protocol_stack(struct rte_mbuf *pkt) {
         ipv6_hdr = rte_pktmbuf_mtod_offset(pkt, struct rte_ipv6_hdr *,
             sizeof(struct rte_ether_hdr));
     } else {
-        printf("invalid IP packet.\n");
+        LOG_ERROR("invalid IP packet.\n");
     }
     
     // Handle TCP and UDP
@@ -238,92 +276,248 @@ void handle_protocol_stack(struct rte_mbuf *pkt) {
         v4_pkt->highest_layer = PROSTACK_HTTP;
     }
 
-    if (v4_pkt)
+    // Match flow table and print debug message.
+    uint64_t flow_hash_key = 0;
+    if (v4_pkt && v4_pkt->is_valid_flow_key) {
         print_v4_packet_info(v4_pkt);
-    else if (v6_pkt)
+        flow_hash_key = calculate_flow_hash_key(v4_pkt->flow_key.block, V4_FLOW_KEY_SIZE);
+        LOG_DEBUG("flow hash key: %lu\n", flow_hash_key);
+        auto it = v4_flow_table.find(flow_hash_key);
+        if (it != v4_flow_table.end()) {
+            it->second.push_back(v4_pkt);
+        } else {
+            v4_flow_table.insert(
+                std::pair<uint64_t, std::vector<struct v4_packet_info*>>(
+                    flow_hash_key, std::vector<struct v4_packet_info*>({v4_pkt})));
+            flow_flag.insert(std::pair<uint64_t, int>(flow_hash_key, 0));
+        }
+    }
+    // TODO: IPv6 flow table
+    if (v6_pkt) {
         print_v6_packet_info(v6_pkt);
-
+    }
     return;
 }
 
-/**
-int extract_ip_layer(const u_char* pkt_data, int ip_ver, struct packet_info* pkt_info) {
-    int ret = 0;
-    if (ip_ver == ETHERTYPE_IP) {
-        struct iphdr* ip_header = (struct iphdr*)pkt_data;
-        pkt_info->ip_hdr_len = ip_header->ihl << 2;
-        pkt_info->ip_payload_length = ntohs(ip_header->tot_len) - pkt_info->ip_hdr_len;
-
-        in_addr addr;
-        addr.s_addr = ip_header->saddr;
-        inet_ntop(AF_INET, &addr, pkt_info->src_ip, 16);
-        addr.s_addr = ip_header->daddr;
-        inet_ntop(AF_INET, &addr, pkt_info->dst_ip, 16);
-
-        pkt_info->proto_val = ip_header->protocol;
-        pkt_info->flags = ip_header->frag_off;
-    } else if (ip_ver == ETHERTYPE_IPV6) {
-        struct ipv6hdr* ip6_header = (struct ipv6hdr*)pkt_data;
-        pkt_info->ip_hdr_len = 40;
-        pkt_info->ip_payload_length = ip6_header->payload_len;
-        inet_ntop(AF_INET6, &(ip6_header->saddr), pkt_info->src_ip, sizeof(pkt_info->src_ip));
-        inet_ntop(AF_INET6, &(ip6_header->daddr), pkt_info->dst_ip, sizeof(pkt_info->dst_ip));
-
-        pkt_info->proto_val = ip6_header->nexthdr;
-        pkt_info->flags = 0;
-    } else 
-        ret = -1;
-    return ret;
-}
-
-int extract_transmission_layer(const u_char* pkt_data, int trans_type, struct packet_info* pkt_info) {
-    int ret = 0;
-
-    if (trans_type == IPPROTO_TCP) {
-        strncpy(pkt_info->proto_type, "tcp\0", 4);
-        struct tcphdr* tcp_header = (struct tcphdr*)pkt_data;
-        pkt_info->src_port = ntohs(tcp_header->source);
-        pkt_info->dst_port = ntohs(tcp_header->dest);
-        pkt_info->trans_hdr_len = tcp_header->doff;
-
-        u_char flags_val = *(pkt_data + 13);
-        pkt_info->tcp_flags = (flags_val & 0x3F);
-        pkt_info->tcp_win = ntohs(tcp_header->window);
-        pkt_info->tcp_ack = tcp_header->ack_seq;
-
-    } else if (trans_type == IPPROTO_UDP) {
-        strncpy(pkt_info->proto_type, "udp\0", 4);
-        struct udphdr* udp_header = (struct udphdr*)pkt_data;
-        pkt_info->src_port = ntohs(udp_header->source);
-        pkt_info->dst_port = ntohs(udp_header->dest);
-        pkt_info->trans_hdr_len = 8;
+void print_v4_flow_table() {
+    printf("In print_v4_flow_table()\n");
+    if (v4_flow_table.empty())
+        return;
+    printf("v4 flow count: %lu\n", v4_flow_table.size());
+    for (auto it = v4_flow_table.begin(); it != v4_flow_table.end(); ++it) {
+        printf("========================\n");
+        printf("=====New flow begin=====\n");
+        auto vec = it->second;
+        for (auto vec_it = vec.begin(); vec_it != vec.end(); ++vec_it)
+            print_v4_packet_info(*vec_it);
+        printf("=====Flow end=====\n");
+        printf("==================\n");
     }
-    else {
-        ret = -1;
+}
+
+void v4_flow_table_cleanup() {
+    // print_v4_flow_table();
+    if (v4_flow_table.empty())
+        return;
+    for (auto it = v4_flow_table.begin(); it != v4_flow_table.end(); ++it) {
+        auto vec = it->second;
+        for (auto vec_it = vec.begin(); vec_it != vec.end(); ++vec_it)
+            free_v4_packet_info(*vec_it);
     }
-    return ret;
+    v4_flow_table.clear();
 }
 
-void print_packet_info(struct packet_info* pkt_info) {
-    printf("\n======five tuple:========\n");
-    printf("src ip: %s, dst ip: %s\n", pkt_info->src_ip, pkt_info->dst_ip);
-    printf("src port: %d, dst port: %d, proto: %s\n", pkt_info->src_port, 
-        pkt_info->dst_port, pkt_info->proto_type);
-    printf("======ip layer:==========\n");
-    printf("ip head length: %d, ip payload length: %d\n", pkt_info->ip_hdr_len, 
-        pkt_info->ip_payload_length);
+void v6_flow_table_cleanup() {
+
 }
 
-struct packet_info* alloc_packet_info() {
-    struct packet_info* ret = (struct packet_info*)malloc(sizeof(struct packet_info));
-    if (ret == NULL)
-        return NULL;
-    memset(ret, 0, sizeof(struct packet_info));
-    return ret;
+inline void normalize_packet(struct v4_packet_info* pkt, double (*time_win)[11], int i) {
+    // Check i < 11
+    if (i > 10) {
+        LOG_ERROR("i must < 10, i: %d\n", i);
+        return;
+    }
+
+    double f_val;
+    f_val = 1 - (feature_value_range[1][1] - pkt->packet_length) / (double)(feature_value_range[1][1] - feature_value_range[1][0]);
+    time_win[i][1] = f_val;
+    LOG_DEBUG("packet_length: %d -> %lf\n", pkt->packet_length, f_val);
+    f_val = 1 - (feature_value_range[2][1] - pkt->flags) / (double)(feature_value_range[2][1] - feature_value_range[2][0]);
+    time_win[i][2] = f_val;
+    LOG_DEBUG("flags: %d -> %lf\n", pkt->flags, f_val);
+    f_val = 1 - (feature_value_range[3][1] - pkt->highest_layer) / (double)(feature_value_range[3][1] - feature_value_range[3][0]);
+    time_win[i][3] = f_val;
+    f_val = 1 - (feature_value_range[4][1] - pkt->protocols_stack) / (double)(feature_value_range[4][1] - feature_value_range[4][0]);
+    time_win[i][4] = f_val;
+    f_val = 1 - (feature_value_range[5][1] - pkt->tcp_len) / (double)(feature_value_range[5][1] - feature_value_range[5][0]);
+    time_win[i][5] = f_val;
+    f_val = 1 - (feature_value_range[6][1] - pkt->tcp_ack) / (double)(feature_value_range[6][1] - feature_value_range[6][0]);
+    time_win[i][6] = f_val;
+    f_val = 1 - (feature_value_range[7][1] - pkt->tcp_flags) / (double)(feature_value_range[7][1] - feature_value_range[7][0]);
+    time_win[i][7] = f_val;
+    f_val = 1 - (feature_value_range[8][1] - pkt->tcp_win) / (double)(feature_value_range[8][1] - feature_value_range[8][0]);
+    time_win[i][8] = f_val;
+    f_val = 1 - (feature_value_range[9][1] - pkt->udp_len) / (double)(feature_value_range[9][1] - feature_value_range[9][0]);
+    time_win[i][9] = f_val;
+    f_val = 1 - (feature_value_range[10][1] - pkt->icmp_type) / (double)(feature_value_range[10][1] - feature_value_range[10][0]);
+    time_win[i][10] = f_val;
+    return;
 }
 
-void free_packet_info(struct packet_info* ptr) {
-    free(ptr);
-    ptr = NULL;
+void transfer_to_feature(std::vector<struct v4_packet_info*>& flow, std::vector<double(*)[11]>& ret_feature_list) {
+    size_t pkt_num = flow.size();
+    if (pkt_num == 0)
+        return;
+
+    struct v4_packet_info* pkt = NULL;
+    struct timeval* win_start_ts;
+    win_start_ts = &(flow[0]->ts);
+    double now = 0;
+    double start_ts = 0;
+    double diff = 0;
+
+    double (*last_time_win)[11] = NULL;
+    last_time_win = (double(*)[11])malloc(win_max_pkt * 11 * sizeof(double));
+    if (last_time_win == NULL) {
+        LOG_ERROR("time_win alloc error.\n");
+        return;
+    }
+    ret_feature_list.push_back(last_time_win);
+
+    size_t i = 0;
+    // pkt offset in time window
+    int pkt_seq = 0;
+    for (; i < pkt_num; ++i) {
+        LOG_DEBUG("packet %u preproecss\n", i);
+        pkt = flow[i];
+        LOG_DEBUG("packet ts: %lds %ldus\n", pkt->ts.tv_sec, pkt->ts.tv_usec);
+        now = pkt->ts.tv_sec + (double)pkt->ts.tv_usec * 1e-6;
+        start_ts = win_start_ts->tv_sec + (double)win_start_ts->tv_usec * 1e-6;
+        diff = now - start_ts;
+        LOG_DEBUG("now timestamp: %lf, start timestamp: %lf, diff time: %lf\n", now, start_ts, diff);
+        
+        // Require a new time window.
+        if (diff - win_time_period > 1e-6) {
+            LOG_DEBUG("new time window require.\n");
+            // Padding
+            while (pkt_seq < win_max_pkt) {
+                LOG_DEBUG("padding\n");
+                last_time_win = ret_feature_list.back();
+                memset(last_time_win + pkt_seq, 0, 11 * sizeof(double));
+                ++pkt_seq;
+            }
+            win_start_ts = &(pkt->ts);
+            double (*time_win)[11] = (double(*)[11])malloc(win_max_pkt * 11 * sizeof(double));
+            if (time_win == NULL) {
+                LOG_ERROR("time_win alloc error.\n");
+                return;
+            }
+            time_win[0][0] = 0;
+            pkt_seq = 0;
+            normalize_packet(pkt, time_win, pkt_seq);
+            ++pkt_seq;
+            ret_feature_list.push_back(time_win);
+        } else {
+            if (pkt_seq > win_max_pkt - 1) {
+                LOG_DEBUG("pkt_seq > win_max_pkt, continue.\n");
+                continue;
+            }
+            last_time_win = ret_feature_list.back();
+            last_time_win[pkt_seq][0] = diff;
+            LOG_DEBUG("last_time_win[%d][0] = %lf\n", pkt_seq, diff);
+            normalize_packet(pkt, last_time_win, pkt_seq);
+            ++pkt_seq;
+        }
+    }
+    // padding
+    while (pkt_seq < win_max_pkt) {
+        LOG_DEBUG("padding\n");
+        last_time_win = ret_feature_list.back();
+        memset(last_time_win + pkt_seq, 0, 11 * sizeof(double));
+        ++pkt_seq;
+    }
+    return;
 }
-*/
+
+void free_feature_list(std::vector<double(*)[11]>& feature_list) {
+    for(size_t i = 0; i < feature_list.size(); ++i) {
+        if (feature_list[i]) {
+            free(feature_list[i]);
+            feature_list[i] = NULL;
+        }
+    }
+}
+
+void* wait_inference_thread(void* args) {
+    // Debug file
+    FILE *log = fopen("infer_data_debug.txt", "w");
+    fprintf(log, "In wait_inference_thread.\n");
+    LOG_DEBUG("In waite_inference_thread\n");
+
+    // walk through flow_table
+    for (auto it = v4_flow_table.begin(); it != v4_flow_table.end(); ++it) {
+        std::vector<struct v4_packet_info*>& item = it->second;
+        LOG_DEBUG("flow length: %lu\n", item.size());
+        fprintf(log, "flow length: %lu\n", item.size());
+        // filter short flow
+        if (item.size() < flow_len_threshold) {
+            LOG_DEBUG("short flow\n");
+            fprintf(log, "short flow\n");
+            continue;
+        }
+        // splite time window in a flow
+        std::vector<double(*)[11]> feature_list;
+        transfer_to_feature(item, feature_list);
+        // Send feature_list to AI process
+        // TODO
+        // Print feature_list for debug
+        fprintf(log, "flow start \n");
+        LOG_DEBUG("flow start");
+        for (auto it = feature_list.begin(); it != feature_list.end(); ++it) {
+            double (*time_win)[11] = *it;
+            fprintf(log, "window start\n");
+            LOG_DEBUG("window start\n");
+            for (int i = 0; i < win_max_pkt; ++i) {
+                for (int j = 0; j < 11; ++j) {
+                    fprintf(log, "%lf ", time_win[i][j]);
+                    LOG_DEBUG("%lf ", time_win[i][j]);
+                }
+                fprintf(log, "\n");
+                LOG_DEBUG("\n");
+            }
+            fprintf(log, "window end\n");
+            LOG_DEBUG("window end\n");
+        }
+        fprintf(log, "flow end\n");
+        LOG_DEBUG("flow end\n");
+
+        free_feature_list(feature_list);
+    }
+    fclose(log);
+    return NULL;
+}
+
+void flow_table_inference() {
+    LOG_INFO("In flow table inference\n");
+    pthread_t wait_infer_th = 0;
+    // pthread_create(&wait_infer_th, NULL, wait_inference_thread, NULL);
+    wait_inference_thread(NULL);
+}
+
+// This function is only for debug.
+void insert_v4_flow_table(struct v4_packet_info* v4_pkt) {
+    LOG_DEBUG("flow key block: %016lx %016lx\n", v4_pkt->flow_key.block[0], v4_pkt->flow_key.block[1]);
+    uint64_t flow_hash_key = calculate_flow_hash_key(v4_pkt->flow_key.block, V4_FLOW_KEY_SIZE);
+    LOG_DEBUG("flow hash key: %lu\n", flow_hash_key);
+    auto it = v4_flow_table.find(flow_hash_key);
+    if (it != v4_flow_table.end()) {
+        it->second.push_back(v4_pkt);
+    } else {
+        v4_flow_table.insert(
+            std::pair<uint64_t, std::vector<struct v4_packet_info*>>(
+                flow_hash_key, std::vector<struct v4_packet_info*>({v4_pkt})));
+        flow_flag.insert(std::pair<uint64_t, int>(flow_hash_key, 0));
+    }
+}
+
+
