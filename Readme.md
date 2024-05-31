@@ -1,8 +1,6 @@
-# imx-deepPacket
-Encryption traffic packets classification demo.
-The demo is based on this paper:
+# App-network-ml
+Application of ML in network. This is an encrypted traffic packets classification demo, which can tell us which service types are being carried by passing packets. Currently supported categories are file transfer, Web browsing, VoIP, Email and Microsoft Office.
 
-> Lotfollahi, Mohammad, et al. "Deep packet: A novel approach for encrypted traffic classification using deep learning." Soft Computing 24.3 (2020): 1999-2012.
 
 ## Setup
 
@@ -36,4 +34,9 @@ It will start tcpdump and web server processes.
 
 Now, you can access the report webpage by `http://<board_ip>:5000` in your PC browser.
 
-**Notice:** The model has concept drift problem, so different training sets should be used to update the model for different network environments.
+By the way, the model has concept drift problem, so different training sets should be used to update the model for different network environments.
+
+## Notice
+The demo is based on this paper:
+
+> Lotfollahi, Mohammad, et al. "Deep packet: A novel approach for encrypted traffic classification using deep learning." Soft Computing 24.3 (2020): 1999-2012.
