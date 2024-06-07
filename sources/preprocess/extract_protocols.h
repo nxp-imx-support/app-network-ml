@@ -19,6 +19,8 @@
 #define ICMP_PROTOCOL_NUM 1
 #define ICMPV6_PROTOCOL_NUM 58
 
+
+
 const __u16 PROSTACK_ETH = 1;
 const __u16 PROSTACK_IP = 1 << 1;
 const __u16 PROSTACK_TCP = 1 << 2;
@@ -141,6 +143,12 @@ struct v6_packet_info {
     __u8 icmp_type;     // ICMP Type
 };
 
+struct inferenced_flow_result {
+    uint64_t flow_key_hash;
+    // The value is either 0.0 or 1.1
+    double infer_result;
+};
+
 
 // struct packet_list {
 //     std::vector<packet_info> vec;
@@ -153,6 +161,9 @@ struct v6_packet_info {
 // int extract_transmission_layer(const u_char* pkt_data, int trans_type, struct packet_info* pkt_info);
 
 // void print_packet_info(struct packet_info* pkt_info);
+
+void main_lcore_handle_init();
+void main_lcore_handle_cleanup();
 
 struct v4_packet_info* alloc_v4_packet_info();
 

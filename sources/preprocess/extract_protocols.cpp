@@ -1,21 +1,29 @@
-#include "extract_protocols.h"
 #include <arpa/inet.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <linux/tcp.h>
 #include <linux/udp.h>
-#include <stdlib.h>
 #include <unordered_map>
-#include <sys/time.h>
 #include <unistd.h>
-#include <sys/syscall.h>
+#include <fcntl.h>
 #include <pthread.h>
-#include <fstream>
-#include "fifo_utils.h"
+
+#include <sys/time.h>
+#include <sys/syscall.h>
+#include <sys/poll.h>
+#include <sys/stat.h>
+#include <pthread.h>
+
+
+#include "utils.h"
+#include "extract_protocols.h"
 
 /* IPv4 and IPv6 flow table */
 std::unordered_map<uint64_t, std::vector<struct v4_packet_info*>> v4_flow_table;
+pthread_mutex_t v4_flow_table_lock = PTHREAD_MUTEX_INITIALIZER;
 std::unordered_map<uint64_t, std::vector<struct v6_packet_info*>> v6_flow_table;
+std::vector<struct inferenced_flow_result> result_list;
 
 /* Flow flag 
  * flag value: int 
@@ -26,6 +34,42 @@ std::unordered_map<uint64_t, std::vector<struct v6_packet_info*>> v6_flow_table;
 std::unordered_map<uint64_t, int> flow_flag;
 
 uint64_t cnt;
+
+/* Pipe for communication with AI inference process 
+*  Only for main_lcore
+*/
+struct pollfd pfds[2];
+bool have_response;
+const char* pipe_reader = "/tmp/py_to_cpp";
+const char* pipe_writer = "/tmp/cpp_to_py";
+int reader_fd;
+int writer_fd;
+
+
+void main_lcore_handle_init() {
+    // Set true for first request
+    have_response = true;
+    mkfifo(pipe_reader, 0666);
+    mkfifo(pipe_writer, 0666);
+    reader_fd = open(pipe_reader, O_RDONLY);
+    writer_fd = open(pipe_writer, O_WRONLY);
+
+    pfds[0].fd = reader_fd;
+    pfds[0].events = POLLIN;
+    pfds[0].revents = 0;
+    pfds[1].fd = writer_fd;
+    pfds[1].events = POLLOUT;
+    pfds[1].revents = 0;
+
+    LOG_INFO("pipe init over.\n");
+    return;
+}
+
+void main_lcore_handle_cleanup() {
+    close(reader_fd);
+    close(writer_fd);
+    return;
+}
 
 struct v4_packet_info* alloc_v4_packet_info() {
     struct v4_packet_info* ptr = (v4_packet_info*)malloc(sizeof(struct v4_packet_info));
@@ -169,12 +213,12 @@ uint64_t calculate_flow_hash_key(uint64_t* block, size_t blk_size) {
         return ret;
     }
 
-    LOG_DEBUG("u64_hash(");
+    LOG_DEBUG_3("u64_hash(");
     for (size_t i = 0; i < blk_size; ++i) {
         ret ^= u64_hash(block[i] & mask[i]);
-        LOG_DEBUG("%016lx ", block[i] & mask[i]);
+        LOG_DEBUG_3("%016lx ", block[i] & mask[i]);
     }
-    LOG_DEBUG(")\n");
+    LOG_DEBUG_3(")\n");
 
     return ret;
 }
@@ -187,7 +231,7 @@ void handle_protocol_stack(struct rte_mbuf *pkt) {
 
     struct rte_ether_hdr *eth_hdr = rte_pktmbuf_mtod(pkt, struct rte_ether_hdr *);
     if (is_valid_ether_pkt(eth_hdr, pkt->pkt_len) < 0) {
-        rte_pktmbuf_free(pkt);
+        // rte_pktmbuf_free(pkt);
         LOG_ERROR("invalid ehter packet.\n");
         return;
     }
@@ -206,7 +250,7 @@ void handle_protocol_stack(struct rte_mbuf *pkt) {
 	
         if (int ret = is_valid_ipv4_pkt(ipv4_hdr, pkt->pkt_len) < 0) {
             LOG_ERROR("invalid ipv4 packet. error code: %d\n", ret);
-            rte_pktmbuf_free(pkt);
+            // rte_pktmbuf_free(pkt);
             return;
         }
 
@@ -279,11 +323,13 @@ void handle_protocol_stack(struct rte_mbuf *pkt) {
     // Match flow table and print debug message.
     uint64_t flow_hash_key = 0;
     if (v4_pkt && v4_pkt->is_valid_flow_key) {
-        print_v4_packet_info(v4_pkt);
+        // print_v4_packet_info(v4_pkt);
         flow_hash_key = calculate_flow_hash_key(v4_pkt->flow_key.block, V4_FLOW_KEY_SIZE);
         LOG_DEBUG("flow hash key: %lu\n", flow_hash_key);
+
+        pthread_mutex_lock(&v4_flow_table_lock);
         auto it = v4_flow_table.find(flow_hash_key);
-        if (it != v4_flow_table.end()) {
+        if (it != v4_flow_table.end() && it->second.size() < flow_len_threshold) {
             it->second.push_back(v4_pkt);
         } else {
             v4_flow_table.insert(
@@ -291,6 +337,7 @@ void handle_protocol_stack(struct rte_mbuf *pkt) {
                     flow_hash_key, std::vector<struct v4_packet_info*>({v4_pkt})));
             flow_flag.insert(std::pair<uint64_t, int>(flow_hash_key, 0));
         }
+        pthread_mutex_unlock(&v4_flow_table_lock);
     }
     // TODO: IPv6 flow table
     if (v6_pkt) {
@@ -317,6 +364,7 @@ void print_v4_flow_table() {
 
 void v4_flow_table_cleanup() {
     // print_v4_flow_table();
+    pthread_mutex_lock(&v4_flow_table_lock);
     if (v4_flow_table.empty())
         return;
     for (auto it = v4_flow_table.begin(); it != v4_flow_table.end(); ++it) {
@@ -325,6 +373,7 @@ void v4_flow_table_cleanup() {
             free_v4_packet_info(*vec_it);
     }
     v4_flow_table.clear();
+    pthread_mutex_unlock(&v4_flow_table_lock);
 }
 
 void v6_flow_table_cleanup() {
@@ -341,10 +390,10 @@ inline void normalize_packet(struct v4_packet_info* pkt, double (*time_win)[11],
     double f_val;
     f_val = 1 - (feature_value_range[1][1] - pkt->packet_length) / (double)(feature_value_range[1][1] - feature_value_range[1][0]);
     time_win[i][1] = f_val;
-    LOG_DEBUG("packet_length: %d -> %lf\n", pkt->packet_length, f_val);
+    LOG_DEBUG_3("packet_length: %d -> %lf\n", pkt->packet_length, f_val);
     f_val = 1 - (feature_value_range[2][1] - pkt->flags) / (double)(feature_value_range[2][1] - feature_value_range[2][0]);
     time_win[i][2] = f_val;
-    LOG_DEBUG("flags: %d -> %lf\n", pkt->flags, f_val);
+    LOG_DEBUG_3("flags: %d -> %lf\n", pkt->flags, f_val);
     f_val = 1 - (feature_value_range[3][1] - pkt->highest_layer) / (double)(feature_value_range[3][1] - feature_value_range[3][0]);
     time_win[i][3] = f_val;
     f_val = 1 - (feature_value_range[4][1] - pkt->protocols_stack) / (double)(feature_value_range[4][1] - feature_value_range[4][0]);
@@ -364,7 +413,7 @@ inline void normalize_packet(struct v4_packet_info* pkt, double (*time_win)[11],
     return;
 }
 
-void transfer_to_feature(std::vector<struct v4_packet_info*>& flow, std::vector<double(*)[11]>& ret_feature_list) {
+void transfer_to_feature(std::vector<struct v4_packet_info*>& flow, std::vector<pktFeaturePtr>& ret_feature_list) {
     size_t pkt_num = flow.size();
     if (pkt_num == 0)
         return;
@@ -377,7 +426,7 @@ void transfer_to_feature(std::vector<struct v4_packet_info*>& flow, std::vector<
     double diff = 0;
 
     double (*last_time_win)[11] = NULL;
-    last_time_win = (double(*)[11])malloc(win_max_pkt * 11 * sizeof(double));
+    last_time_win = (pktFeaturePtr)malloc(win_max_pkt * 11 * sizeof(double));
     if (last_time_win == NULL) {
         LOG_ERROR("time_win alloc error.\n");
         return;
@@ -388,26 +437,26 @@ void transfer_to_feature(std::vector<struct v4_packet_info*>& flow, std::vector<
     // pkt offset in time window
     int pkt_seq = 0;
     for (; i < pkt_num; ++i) {
-        LOG_DEBUG("packet %u preproecss\n", i);
+        LOG_DEBUG_3("packet %u preproecss\n", i);
         pkt = flow[i];
-        LOG_DEBUG("packet ts: %lds %ldus\n", pkt->ts.tv_sec, pkt->ts.tv_usec);
+        LOG_DEBUG_3("packet ts: %lds %ldus\n", pkt->ts.tv_sec, pkt->ts.tv_usec);
         now = pkt->ts.tv_sec + (double)pkt->ts.tv_usec * 1e-6;
         start_ts = win_start_ts->tv_sec + (double)win_start_ts->tv_usec * 1e-6;
         diff = now - start_ts;
-        LOG_DEBUG("now timestamp: %lf, start timestamp: %lf, diff time: %lf\n", now, start_ts, diff);
+        LOG_DEBUG_3("now timestamp: %lf, start timestamp: %lf, diff time: %lf\n", now, start_ts, diff);
         
         // Require a new time window.
         if (diff - win_time_period > 1e-6) {
             LOG_DEBUG("new time window require.\n");
-            // Padding
+            // Padding last window
             while (pkt_seq < win_max_pkt) {
-                LOG_DEBUG("padding\n");
+                LOG_DEBUG_3("padding\n");
                 last_time_win = ret_feature_list.back();
                 memset(last_time_win + pkt_seq, 0, 11 * sizeof(double));
                 ++pkt_seq;
             }
             win_start_ts = &(pkt->ts);
-            double (*time_win)[11] = (double(*)[11])malloc(win_max_pkt * 11 * sizeof(double));
+            double (*time_win)[11] = (pktFeaturePtr)malloc(win_max_pkt * 11 * sizeof(double));
             if (time_win == NULL) {
                 LOG_ERROR("time_win alloc error.\n");
                 return;
@@ -419,12 +468,12 @@ void transfer_to_feature(std::vector<struct v4_packet_info*>& flow, std::vector<
             ret_feature_list.push_back(time_win);
         } else {
             if (pkt_seq > win_max_pkt - 1) {
-                LOG_DEBUG("pkt_seq > win_max_pkt, continue.\n");
+                LOG_DEBUG_3("pkt_seq > win_max_pkt, continue.\n");
                 continue;
             }
             last_time_win = ret_feature_list.back();
             last_time_win[pkt_seq][0] = diff;
-            LOG_DEBUG("last_time_win[%d][0] = %lf\n", pkt_seq, diff);
+            LOG_DEBUG_3("last_time_win[%d][0] = %lf\n", pkt_seq, diff);
             normalize_packet(pkt, last_time_win, pkt_seq);
             ++pkt_seq;
         }
@@ -439,76 +488,173 @@ void transfer_to_feature(std::vector<struct v4_packet_info*>& flow, std::vector<
     return;
 }
 
-void free_feature_list(std::vector<double(*)[11]>& feature_list) {
+void free_feature_list(std::vector<pktFeaturePtr>& feature_list) {
     for(size_t i = 0; i < feature_list.size(); ++i) {
         if (feature_list[i]) {
             free(feature_list[i]);
             feature_list[i] = NULL;
         }
     }
+    feature_list.clear();
 }
 
-void* wait_inference_thread(void* args) {
+void calculate_flow_features(std::vector<pktFeaturePtr>& feature_list, std::vector<struct inferenced_flow_result>& result_list) {
     // Debug file
-    FILE *log = fopen("infer_data_debug.txt", "w");
-    fprintf(log, "In wait_inference_thread.\n");
-    LOG_DEBUG("In waite_inference_thread\n");
+    FILE *log = fopen("infer_data_debug.txt", "a");
+    fprintf(log, "\nIn calculate_flow_features.\n");
+    LOG_DEBUG_3("In calculate_flow_features\n");
+
+    struct inferenced_flow_result result_item;
+    result_item.infer_result = 0.0;
 
     // walk through flow_table
     for (auto it = v4_flow_table.begin(); it != v4_flow_table.end(); ++it) {
+        // If this flow was tagged, it doesn't need to inference again.
+        if (flow_flag[it->first] != 0) {
+            continue;
+        }
         std::vector<struct v4_packet_info*>& item = it->second;
-        LOG_DEBUG("flow length: %lu\n", item.size());
+        LOG_DEBUG_3("flow length: %lu\n", item.size());
         fprintf(log, "flow length: %lu\n", item.size());
         // filter short flow
         if (item.size() < flow_len_threshold) {
-            LOG_DEBUG("short flow\n");
+            LOG_DEBUG_3("short flow\n");
             fprintf(log, "short flow\n");
             continue;
         }
         // splite time window in a flow
-        std::vector<double(*)[11]> feature_list;
         transfer_to_feature(item, feature_list);
-        // Send feature_list to AI process
-        // TODO
-        // Print feature_list for debug
-        fprintf(log, "flow start \n");
-        LOG_DEBUG("flow start");
-        for (auto it = feature_list.begin(); it != feature_list.end(); ++it) {
-            double (*time_win)[11] = *it;
-            fprintf(log, "window start\n");
-            LOG_DEBUG("window start\n");
-            for (int i = 0; i < win_max_pkt; ++i) {
-                for (int j = 0; j < 11; ++j) {
-                    fprintf(log, "%lf ", time_win[i][j]);
-                    LOG_DEBUG("%lf ", time_win[i][j]);
-                }
-                fprintf(log, "\n");
-                LOG_DEBUG("\n");
-            }
-            fprintf(log, "window end\n");
-            LOG_DEBUG("window end\n");
+        while (result_list.size() < feature_list.size()) {
+            result_item.flow_key_hash = it->first;
+            result_list.push_back(result_item);
         }
-        fprintf(log, "flow end\n");
-        LOG_DEBUG("flow end\n");
-
-        free_feature_list(feature_list);
+    }
+    // Print feature_list for debug
+    for (auto it = feature_list.begin(); it != feature_list.end(); ++it) {
+        pktFeaturePtr time_win = *it;
+        fprintf(log, "window start\n");
+        LOG_DEBUG_2("window start\n");
+        for (int i = 0; i < win_max_pkt; ++i) {
+            for (int j = 0; j < 11; ++j) {
+                fprintf(log, "%lf ", time_win[i][j]);
+                LOG_DEBUG_2("%lf ", time_win[i][j]);
+            }
+            fprintf(log, "\n");
+            LOG_DEBUG_2("\n");
+        }
+        fprintf(log, "window end\n");
+        LOG_DEBUG_2("window end\n");
     }
     fclose(log);
-    return NULL;
+    return;
 }
 
 void flow_table_inference() {
-    LOG_INFO("In flow table inference\n");
-    pthread_t wait_infer_th = 0;
-    // pthread_create(&wait_infer_th, NULL, wait_inference_thread, NULL);
-    wait_inference_thread(NULL);
+    LOG_DEBUG("In flow table inference\n");
+    int nfds = poll(pfds, 2, 200);
+    ssize_t read_bytes = 0;
+    ssize_t expected_data_length = 0;
+    std::vector<pktFeaturePtr> feature_list;
+    struct array_desc msg_desc;
+    char* buffer = NULL;
+
+    // pipe is not readable and writeable
+    if (nfds <= 0)
+        return;
+    
+    // If pipe is readable and not receive response yet.
+    if (!have_response && pfds[0].revents & POLLIN) {
+        LOG_DEBUG_3("pipe is readable.\n");
+        read_bytes = read(reader_fd, &(msg_desc.row), sizeof(uint64_t));
+        read_bytes = read(reader_fd, &(msg_desc.col), sizeof(uint64_t));
+        LOG_DEBUG_3("msg_desc: %lu %lu\n", msg_desc.row, msg_desc.col);
+
+        // It is a one dimensional array, like {1.0, 1.0, 0.0, 0.0, 1.0, 0.0, ...}
+        expected_data_length = msg_desc.row * msg_desc.col * sizeof(double);
+        LOG_DEBUG_3("expected array size: %ld\n", expected_data_length);
+        buffer = (char*)malloc(expected_data_length);
+        read_bytes = read(reader_fd, buffer, expected_data_length);
+        LOG_DEBUG_3("read %ld bytes from pipe.\n", read_bytes);
+        std::vector<double> infer_result_arr;
+        unpack_double_type_array(buffer, expected_data_length, infer_result_arr);
+        free(buffer);
+        buffer = NULL;
+        // Corelate inference result, and vote to update flow_flag
+        size_t r_l_length = result_list.size();
+        if (r_l_length != infer_result_arr.size()) {
+            LOG_ERROR("Inference result get error: array length doesn't match! result_list size: %lu\n", r_l_length);
+            return;
+        }
+        
+        if (r_l_length == 0) {
+            LOG_ERROR("Inference result get error: array length is 0!\n");
+            return;
+        }
+        
+        for (int i = 0; i < r_l_length; ++i) {
+            result_list[i].infer_result = infer_result_arr[i];
+        }
+        // Update flow_flag, need to vote
+        int ddos_cnt = 0;
+        int total_cnt = 0;
+        uint64_t key_tmp = result_list[0].flow_key_hash;
+        for (int i = 0; i < r_l_length; ++i) {
+            if (key_tmp != result_list[i].flow_key_hash) {
+                flow_flag[key_tmp] = (total_cnt - ddos_cnt > ddos_cnt) ? 2 : 1;
+                ddos_cnt = 0;
+                total_cnt = 0;
+                key_tmp = result_list[i].flow_key_hash;
+            }
+            if (result_list[i].infer_result == 1.0)
+                ++ddos_cnt;
+            ++total_cnt;
+        }
+        flow_flag[key_tmp] = (total_cnt - ddos_cnt > ddos_cnt) ? 2 : 1;
+        // Debug flow_flag
+        for (auto it = flow_flag.begin(); it != flow_flag.end(); ++it) {
+            LOG_DEBUG("%lu => %d\n", it->first, it->second);
+        }
+        // Clean
+        have_response = true;
+        result_list.clear();
+    }
+
+    // If pipe is writeable and last inference is over.
+    if (have_response && pfds[1].revents & POLLOUT) {
+        LOG_DEBUG_3("pipe is writeable.\n");
+        calculate_flow_features(feature_list, result_list);
+        if (feature_list.size() == 0 || result_list.size() == 0) {
+            LOG_INFO("No flow need to inference");
+            return;
+        }
+        // Write to pipe.
+        // Calculate the packets amount = time window count * packets per window
+        msg_desc.row = feature_list.size() * win_max_pkt;
+        msg_desc.col = 11;
+        char* buf = pack_double_type_array(msg_desc, win_max_pkt, feature_list);
+        for (auto it = feature_list.begin(); it != feature_list.end(); ++it) {
+            free(*it);
+            *it = NULL;
+        }
+        free_feature_list(feature_list);
+        if (buf == NULL)
+            return;
+        ssize_t writen_bytes = 0;
+        writen_bytes = write(writer_fd, &msg_desc, sizeof(msg_desc));
+        LOG_DEBUG_3("%ld bytes to write.\n", writen_bytes);
+        writen_bytes = write(writer_fd, buf, msg_desc.row * msg_desc.col * sizeof(double));
+        LOG_DEBUG_3("%ld bytes to write.\n", writen_bytes);
+        free(buf);
+        buf = NULL;
+        have_response = false;
+    }
 }
 
 // This function is only for debug.
 void insert_v4_flow_table(struct v4_packet_info* v4_pkt) {
-    LOG_DEBUG("flow key block: %016lx %016lx\n", v4_pkt->flow_key.block[0], v4_pkt->flow_key.block[1]);
+    LOG_DEBUG_3("flow key block: %016lx %016lx\n", v4_pkt->flow_key.block[0], v4_pkt->flow_key.block[1]);
     uint64_t flow_hash_key = calculate_flow_hash_key(v4_pkt->flow_key.block, V4_FLOW_KEY_SIZE);
-    LOG_DEBUG("flow hash key: %lu\n", flow_hash_key);
+    LOG_DEBUG_3("flow hash key: %lu\n", flow_hash_key);
     auto it = v4_flow_table.find(flow_hash_key);
     if (it != v4_flow_table.end()) {
         it->second.push_back(v4_pkt);

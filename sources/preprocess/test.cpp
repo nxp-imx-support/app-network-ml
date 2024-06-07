@@ -5,41 +5,18 @@
 #include <vector>
 #include <string>
 #include <cstring>
-#include "fifo_utils.h"
+#include <signal.h>
+#include "utils.h"
 #include "extract_protocols.h"
 
-int test_send_vector() {
-    std::vector<double> d_arr1({3.14, 5.28, 6.29, 7.62});
-    std::vector<double> d_arr2({1.22, 2.33, 3.33, 4.12});
-    std::vector<std::vector<double>> vec_2d;
-    vec_2d.push_back(d_arr1);
-    vec_2d.push_back(d_arr2);
+bool quit_flag;
 
-    const char* fifo_writer = "/tmp/dpdk_fifo";
-    const char* fifo_reader = "/tmp/tfl_fifo";
-    init_send_fifo(fifo_writer);
-    int status = 0;
-    for (auto it = vec_2d.begin(); it != vec_2d.end(); it++) {
-        status = send_control_msg(fifo_writer, CTL_DOUBLE_VECTOR_START);
-        if (status) {
-            std::cout << "send control msg error" << std::endl;
-            exit(0);
-        }
-        recv_control_msg(fifo_reader);
-        std::cout << "prepare to send data" << std::endl;
-        status = send_vector_double(fifo_writer, *it);
-        if (status) {
-            std::cout << "send vector error" << std::endl;
-            exit(0);
-        }
-        recv_control_msg(fifo_reader);
-    }
-    send_control_msg(fifo_writer, CTL_DOUBLE_VECTOR_END);
-    recv_control_msg(fifo_reader);
-    return 0;
+void signal_handler(int signum) {
+    LOG_DEBUG("Received signal, exit...\n");
+    quit_flag = true;
 }
 
-void test_flow_table_inference() {
+void generate_flow_sample() {
     // Simulate some pakcets
     union v4_flow_key flow1;
     flow1.ip_src = 113;
@@ -47,8 +24,8 @@ void test_flow_table_inference() {
     flow1.port_src = 453;
     flow1.port_dst = 6543;
     flow1.proto = 1;
-    LOG_DEBUG("flow1 block: %016lx %016lx\n", flow1.block[0], flow1.block[1]);
-    LOG_DEBUG("ip_src: %d, ip_dst: %d, port_src: %d, port_dst: %d, proto: %d\n", 
+    LOG_DEBUG_1("flow1 block: %016lx %016lx\n", flow1.block[0], flow1.block[1]);
+    LOG_DEBUG_1("ip_src: %d, ip_dst: %d, port_src: %d, port_dst: %d, proto: %d\n", 
               flow1.ip_src, flow1.ip_dst, flow1.port_src, flow1.port_dst, flow1.proto);
     union v4_flow_key flow2;
     flow2.ip_src = 132;
@@ -71,6 +48,7 @@ void test_flow_table_inference() {
         p1->ts.tv_usec = 8;
         p1->flags = 445;
         p1->tcp_ack = 777;
+        p1->packet_length = 1111;
         p1->is_valid_flow_key = true;
         memcpy(&p1->flow_key, &flow1, sizeof(flow1));
         insert_v4_flow_table(p1);
@@ -83,17 +61,25 @@ void test_flow_table_inference() {
         p2->flags = 887;
         p2->tcp_ack = 345;
         p2->is_valid_flow_key = true;
+        p2->packet_length = 2222;
         memcpy(&p2->flow_key, &flow2, sizeof(flow2));
         insert_v4_flow_table(p2);
     }
 
     // Flow3
-    // for (int i = 0; i < 5; ++i) {
-    //     struct v4_packet_info* p3 = alloc_v4_packet_info();
-    //     memset(p3, 0x06, sizeof(struct v4_packet_info));
-    //     memcpy(&p3->flow_key, &flow3, sizeof(flow3));
-    //     insert_v4_flow_table(p3);
-    // }
+    for (int i = 0; i < 5; ++i) {
+        struct v4_packet_info* p3 = alloc_v4_packet_info();
+        memset(p3, 0x06, sizeof(struct v4_packet_info));
+        p3->packet_length = 3333;
+        memcpy(&p3->flow_key, &flow3, sizeof(flow3));
+        insert_v4_flow_table(p3);
+    }
+}
+
+
+void test_flow_table_inference() {
+    // Simulate some pakcets
+    generate_flow_sample();
     
     print_v4_flow_table();
     flow_table_inference();
@@ -101,8 +87,39 @@ void test_flow_table_inference() {
     return;
 }
 
+void test_pipe_communication() {
+    quit_flag = false;
+    int time_period = 3;
+    signal(SIGTERM, signal_handler);
+    signal(SIGPIPE, signal_handler);
+    signal(SIGINT, signal_handler);
+
+    // Simulate some flow
+    generate_flow_sample();
+    // print_v4_flow_table();
+
+    main_lcore_handle_init();
+    LOG_DEBUG("After main_lcore_handle_init().\n");
+    int pre_ts = 0;
+    int cur_ts = 0;
+    int diff_ts = 0;
+    while (!quit_flag) {
+        cur_ts = time(NULL);
+        diff_ts = cur_ts - pre_ts;
+        if (diff_ts > time_period) {
+            pre_ts = cur_ts;
+            flow_table_inference();
+        }
+    }
+    LOG_INFO("Clean up...\n");
+    v4_flow_table_cleanup();
+    main_lcore_handle_cleanup();
+    return;
+}
+
 int main() {
-    test_flow_table_inference();
+    // test_flow_table_inference();
+    test_pipe_communication();
     return 0;
 }
 

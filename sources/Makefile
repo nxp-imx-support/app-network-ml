@@ -5,8 +5,9 @@
 APP = l2capfwd
 
 # all source are stored in SRCS-y
-SRCS-y := preprocess/dpdk-l2capfwd.cpp preprocess/main.cpp preprocess/extract_protocols.cpp preprocess/fifo_utils.cpp
-SRCS-test := preprocess/test.cpp preprocess/extract_protocols.cpp preprocess/fifo_utils.cpp
+SRC-h := preprocess/utils.h preprocess/extract_protocols.h preprocess/dpdk-l2capfwd.h
+SRCS-y := preprocess/dpdk-l2capfwd.cpp preprocess/main.cpp preprocess/extract_protocols.cpp preprocess/utils.cpp
+SRCS-test := preprocess/test.cpp preprocess/extract_protocols.cpp preprocess/utils.cpp
 
 PKGCONF ?= pkg-config
 
@@ -39,10 +40,10 @@ endif
 build/$(APP)-shared: $(SRCS-y) Makefile $(PC_FILE) | build
 	$(CC) $(CFLAGS) $(SRCS-y) -o $@ $(LDFLAGS) $(LDFLAGS_SHARED)
 
-build/$(APP): $(SRCS-y) Makefile $(PC_FILE) | build
+build/$(APP): $(SRCS-y) Makefile $(PC_FILE) $(SRC-h) | build
 	$(CC) $(CFLAGS) $(SRCS-y) -o $@ $(LDFLAGS) $(LDFLAGS_STATIC)
 
-build/test: $(SRCS-test) Makefile | build
+build/test: $(SRCS-test) Makefile $(SRC-h) | build
 	$(CC) $(CFLAGS) $(SRCS-test) -o $@ $(LDFLAGS) $(LDFLAGS_STATIC)
 
 build:

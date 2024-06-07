@@ -9,6 +9,7 @@
 #include <inttypes.h>
 #include <sys/types.h>
 #include <sys/queue.h>
+#include <sys/poll.h>
 #include <setjmp.h>
 #include <stdarg.h>
 #include <ctype.h>
@@ -40,6 +41,7 @@
 #include <rte_string_fns.h>
 
 #include "extract_protocols.h"
+#include "utils.h"
 
 static volatile bool force_quit;
 
@@ -249,22 +251,6 @@ l2fwd_cap_forward(struct rte_mbuf *pkt, unsigned portid) {
 	unsigned dst_port;
 	int sent;
 	struct rte_eth_dev_tx_buffer *buffer;
-	// struct rte_ipv4_hdr *ipv4_hdr;
-    
-	// struct rte_ether_hdr *eth = rte_pktmbuf_mtod(pkt, struct rte_ether_hdr *);
-	// ipv4_hdr = rte_pktmbuf_mtod_offset(pkt, struct rte_ipv4_hdr*, sizeof(struct rte_ether_hdr));
-
-	// uint64_t eth_src_u64 = 0;
-	// uint64_t eth_dst_u64 = 0;
-
-	// memcpy(&eth_src_u64, eth->src_addr.addr_bytes, 6);
-	// memcpy(&eth_dst_u64, eth->dst_addr.addr_bytes, 6);
-	// char sip_str[16] = { 0 };
-	// char dip_str[16] = { 0 };
-	// inet_ntop(AF_INET, (void*)(&ipv4_hdr->src_addr), sip_str, sizeof(sip_str));
-	// inet_ntop(AF_INET, (void*)(&ipv4_hdr->dst_addr), dip_str, sizeof(dip_str));
-	// printf("MAC: src=%lx, dst=%lx\n", eth_src_u64, eth_dst_u64);
-	// printf("IP: src=%s, dst=%s\n", sip_str, dip_str);
 
     // Handle network protocol stack
     handle_protocol_stack(pkt);
@@ -280,7 +266,7 @@ l2fwd_cap_forward(struct rte_mbuf *pkt, unsigned portid) {
 static void
 l2fwd_main_loop(void)
 {
-	printf("currend pid: %d, current tid: %d, pthread tid: %ld\n", getpid(), rte_gettid(), pthread_self());
+	LOG_DEBUG("currend pid: %d, current tid: %d, pthread tid: %ld\n", getpid(), rte_gettid(), pthread_self());
 	struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
 	struct rte_mbuf *m;
 	int sent;
@@ -297,6 +283,11 @@ l2fwd_main_loop(void)
 
 	lcore_id = rte_lcore_id();
 	qconf = &lcore_queue_conf[lcore_id];
+
+	if (lcore_id == rte_get_main_lcore()) {
+		LOG_INFO("Start main lcore handle init.\n");
+		main_lcore_handle_init();
+	}
 
 	if (qconf->n_rx_port == 0) {
 		RTE_LOG(INFO, L2FWD, "lcore %u has nothing to do\n", lcore_id);
@@ -346,7 +337,7 @@ l2fwd_main_loop(void)
 
 					/* do this only on main core */
 					if (lcore_id == rte_get_main_lcore()) {
-						// print_stats();
+						print_stats();
 						flow_table_inference();
 						/* reset the timer */
 						timer_tsc = 0;
@@ -378,6 +369,12 @@ l2fwd_main_loop(void)
 			}
 		}
 		/* >8 End of read packet from RX queues. */
+	}
+	// Cleanup main lcore
+	if (lcore_id == rte_get_main_lcore()) {
+		main_lcore_handle_cleanup();
+		// Clean up flow table
+		v4_flow_table_cleanup();
 	}
 }
 
@@ -735,7 +732,7 @@ check_all_ports_link_status(uint32_t port_mask)
 static void
 signal_handler(int signum)
 {
-	if (signum == SIGINT || signum == SIGTERM) {
+	if (signum == SIGINT || signum == SIGTERM || signum == SIGPIPE) {
 		printf("\n\nSignal %d received, preparing to exit...\n",
 				signum);
 		force_quit = true;
@@ -765,6 +762,7 @@ dpdk_l2capfwd_main(int argc, char **argv)
 	force_quit = false;
 	signal(SIGINT, signal_handler);
 	signal(SIGTERM, signal_handler);
+	signal(SIGPIPE, signal_handler);
 
 	/* parse application arguments (after the EAL ones) */
 	ret = l2fwd_parse_args(argc, argv);
@@ -1020,8 +1018,6 @@ dpdk_l2capfwd_main(int argc, char **argv)
 		printf(" Done\n");
 	}
 
-	// Clean up flow table
-	v4_flow_table_cleanup();
 	/* clean up the EAL */
 	rte_eal_cleanup();
 	printf("Bye...\n");
