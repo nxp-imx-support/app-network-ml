@@ -51,6 +51,7 @@ def signal_handler(signum, frame):
         quit_flag = True
 
 def unpack_double_type_array(array_desc, buf):
+    log_debug("buf length: {}".format(len(buf)))
     ret = list()
     row_size = array_desc.col * DOUBLE_SIZE
     fmt_str = 'd' * array_desc.col
@@ -121,7 +122,7 @@ def model_predict(args, x_data):
     
     for vec in x_data:
         input_data = vec / input_scale + input_zero_point
-        log_debug("input_data shape: {}, type: {}".format(input_data.shape, type(input_data[0][0][0])))
+        # log_debug("input_data shape: {}, type: {}".format(input_data.shape, type(input_data[0][0][0])))
 
         tmp_log = input_data.reshape((-1, 11))
         log_file.write("\ninput data type: {}\n".format(type(tmp_log[0][0])))
@@ -153,7 +154,7 @@ def main():
       '-e', '--ext_delegate', help='external_delegate_library path')
     parser.add_argument(
       '-o',
-      '--ext_delegate_options',
+      '--ext_opt',
       help='external delegate options, \
             format: "option1: value1; option2: value2"')
     model_args = parser.parse_args()
@@ -198,7 +199,16 @@ def main():
                     log_debug("Read from pipe...")
                     buf = os.read(fd, UINT64_SIZE * 2)
                     array_desc.row, array_desc.col = struct.unpack("QQ", buf)
-                    buf = os.read(fd, array_desc.row * array_desc.col * DOUBLE_SIZE)
+                    log_debug("expected {} bytes to be read: row={}, col={}".format(array_desc.row * array_desc.col * DOUBLE_SIZE, array_desc.row, array_desc.col))
+                    
+                    left_bytes = array_desc.row * array_desc.col * DOUBLE_SIZE
+                    tmp = b''
+                    buf = b''
+                    while left_bytes > 0:
+                        tmp = os.read(fd, 65536)
+                        buf += tmp
+                        left_bytes -= len(tmp)
+                    # buf = os.read(fd, array_desc.row * array_desc.col * DOUBLE_SIZE)
                     x_data = unpack_double_type_array(array_desc, buf)
                     # print(x_data)
                     log_debug("Start model predict.")
@@ -214,7 +224,7 @@ def main():
                     array_desc.col = len(response_array)
                     log_debug("array row: {}, array col: {}".format(array_desc.row, array_desc.col))
                     desc_buf = struct.pack("QQ", array_desc.row, array_desc.col)
-                    log_debug("desc_buf: {}".format(desc_buf.hex()))
+                    # log_debug("desc_buf: {}".format(desc_buf.hex()))
                     log_debug("response_array: {}".format(response_array))
                     buf = pack_double_type_array(array_desc, response_array)
                     os.write(fd, desc_buf)

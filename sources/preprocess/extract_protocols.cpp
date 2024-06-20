@@ -631,6 +631,7 @@ void flow_table_inference() {
         // Calculate the packets amount = time window count * packets per window
         msg_desc.row = feature_list.size() * win_max_pkt;
         msg_desc.col = 11;
+        LOG_DEBUG("msg_desc: row=%lu, col=%lu\n", msg_desc.row, msg_desc.col);
         char* buf = pack_double_type_array(msg_desc, win_max_pkt, feature_list);
         for (auto it = feature_list.begin(); it != feature_list.end(); ++it) {
             free(*it);
@@ -641,9 +642,10 @@ void flow_table_inference() {
             return;
         ssize_t writen_bytes = 0;
         writen_bytes = write(writer_fd, &msg_desc, sizeof(msg_desc));
-        LOG_DEBUG_3("%ld bytes to write.\n", writen_bytes);
+        LOG_DEBUG("%ld bytes to write.\n", writen_bytes);
+        LOG_DEBUG("%lu bytes need to be writen\n", msg_desc.row * msg_desc.col * sizeof(double));
         writen_bytes = write(writer_fd, buf, msg_desc.row * msg_desc.col * sizeof(double));
-        LOG_DEBUG_3("%ld bytes to write.\n", writen_bytes);
+        LOG_DEBUG("%lu bytes to write.\n", writen_bytes);
         free(buf);
         buf = NULL;
         have_response = false;
