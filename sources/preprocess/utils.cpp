@@ -27,6 +27,14 @@ void print_log(int log_level, const char* file_name, unsigned int line,
     printf("\n");
 }
 
+void print_bytes_hex(const char* buf, size_t len) {
+    for (int i = 0; i < len; i++) {
+        printf("%02X ", buf[i]);
+    }
+    printf("\n");
+    return;
+}
+
 /**
  * Pack 2D features array
 */
@@ -49,12 +57,12 @@ char* pack_double_type_array(struct array_desc arr_desc, size_t rows, std::vecto
  * Unpack 1D inference result array
 */
 int unpack_double_type_array(char* buf, ssize_t buf_length, std::vector<double>& arr) {
-    LOG_DEBUG_3("In unpack_double_type_array.\n");
+    LOG_DEBUG("In unpack_double_type_array.\n");
     double* d_ptr = (double*)buf;
     ssize_t arr_length = buf_length / sizeof(double);
     std::copy(d_ptr, d_ptr + arr_length, std::back_inserter(arr));
-    for (auto it = arr.begin(); it != arr.end(); ++it) {
-        LOG_DEBUG_3("%lf ", *it);
-    }
+    // for (auto it = arr.begin(); it != arr.end(); ++it) {
+    //     LOG_DEBUG("%lf ", *it);
+    // }
     return 0;
 }

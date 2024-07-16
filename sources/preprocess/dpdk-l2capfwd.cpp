@@ -253,13 +253,17 @@ l2fwd_cap_forward(struct rte_mbuf *pkt, unsigned portid) {
 	struct rte_eth_dev_tx_buffer *buffer;
 
     // Handle network protocol stack
-    handle_protocol_stack(pkt);
-    
-	dst_port = l2fwd_dst_ports[portid];
-	buffer = tx_buffer[dst_port];
-	sent = rte_eth_tx_buffer(dst_port, 0, buffer, pkt);
-	if (sent)
-		port_statistics[dst_port].tx += sent;
+	int is_ddos = 0;
+    handle_protocol_stack(pkt, &is_ddos);
+	if (is_ddos == 1) {
+		rte_pktmbuf_free(pkt);
+	} else {
+		dst_port = l2fwd_dst_ports[portid];
+		buffer = tx_buffer[dst_port];
+		sent = rte_eth_tx_buffer(dst_port, 0, buffer, pkt);
+		if (sent)
+			port_statistics[dst_port].tx += sent;
+	}	
 }
 
 /* main processing loop */
@@ -338,7 +342,7 @@ l2fwd_main_loop(void)
 					/* do this only on main core */
 					if (lcore_id == rte_get_main_lcore()) {
 						print_stats();
-						flow_table_inference();
+						flow_table_inference(&force_quit);
 						/* reset the timer */
 						timer_tsc = 0;
 					}

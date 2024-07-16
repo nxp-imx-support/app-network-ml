@@ -1,43 +1,56 @@
+# Extract features from pcap file via dpkt.
+# The way features are extracted should be same as /preprocess/extract_ptotocols.cpp
+
 import dpkt
 import sys
 import time
-import socket
-import pickle
-import random
 import hashlib
 import argparse
 import ipaddress
-from sklearn.feature_extraction.text import CountVectorizer
 from multiprocessing import Manager, Pool
 from util_functions import *
 import os
-import subprocess
-import json
 from enum import IntEnum
+from sklearn.model_selection import train_test_split
+import h5py
+import random
 
-IDS2018_DDOS_FLOWS = {'attackers': ['18.218.115.60', '18.219.9.1','18.219.32.43','18.218.55.126','52.14.136.135','18.219.5.43','18.216.200.189','18.218.229.235','18.218.11.51','18.216.24.42'],
-                      'victims': ['18.218.83.150','172.31.69.28']}
-
-IDS2017_DDOS_FLOWS = {'attackers': ['172.16.0.1'],
-                      'victims': ['192.168.10.50']}
-
-CUSTOM_DDOS_SYN = {'attackers': ['11.0.0.' + str(x) for x in range(1,255)],
-                      'victims': ['10.42.0.2']}
 
 DOS2019_FLOWS = {'attackers': ['172.16.0.5'], 'victims': ['192.168.50.1', '192.168.50.4']}
 
-DDOS_ATTACK_SPECS = {
-    'DOS2017' : IDS2017_DDOS_FLOWS,
-    'DOS2018' : IDS2018_DDOS_FLOWS,
-    'SYN2020' : CUSTOM_DDOS_SYN,
-    'DOS2019': DOS2019_FLOWS
-}
+PROSTACK_ETH = 1
+PROSTACK_IP = 1 << 1
+PROSTACK_TCP = 1 << 2
+PROSTACK_UDP = 1 << 3
+PROSTACK_ICMP = 1 << 4
+PROSTACK_SSL = 1 << 5
+PROSTACK_HTTP = 1 << 6
+PROSTACK_DNS = 1 << 7
+
+flow_len_threshold = 1
+win_time_period = 10
+win_max_pkt = 10
+
+feature_value_range = [
+    [0, 10],
+    [0, 0xFFFF],
+    [0, 0x0F],
+    [0, 0xFFFF],
+    [0, 0xFFFF],
+    [0, 0xFFFF],
+    [0, 0xFFFFFFFF],
+    [0, 0xFFFF],
+    [0, 0xFFFF],
+    [0, 0xFFFF],
+    [0, 0xFF]
+]
+
 
 class FeatureList(IntEnum):
     sniff_time = 0
     packet_length = 1
-    highest_layer = 2
-    ip_flags = 3
+    ip_flags = 2
+    highest_layer = 3
     protocols_stack = 4
     tcp_len = 5
     tcp_ack = 6
@@ -58,7 +71,7 @@ class TrafficFlowKey(object):
 
     def __str__(self) -> str:
         ret_str = "TrafficFlowKey object <"
-        ret_str += "src ip:{}, dst ip:{}, src port:{}, dst porot:{}>".format(self.src_ip, self.dst_ip, self.src_port, self.dst_port)
+        ret_str += "src ip:{}, dst ip:{}, src port:{}, dst port:{}, proto:{}>".format(self.src_ip, self.dst_ip, self.src_port, self.dst_port, self.proto)
         return ret_str
 
     def __eq__(self, other):
@@ -69,21 +82,19 @@ class TrafficFlowKey(object):
         cond3 = self.src_port == other.src_port
         cond4 = self.dst_port == other.dst_port
         cond5 = self.proto == other.proto
-        return cond1 and cond2 and cond3 and cond4 and cond5
+        cond6 = self.src_ip == other.dst_ip
+        cond7 = self.src_port == other.dst_port
+        cond8 = self.dst_ip == other.src_ip
+        cond9 = self.dst_port == other.src_port
+        return cond5 and ((cond1 and cond2 and cond3 and cond4) or (cond6 and cond7 and cond8 and cond9))
 
     def __hash__(self):
         return hash((self.src_ip, self.dst_ip, self.src_port, self.dst_port, self.proto))
 
-    # merge fwd and bwd
-    def order_ports(self):
-        if self.src_port < self.dst_port:
-            tmp = self.src_ip
-            self.src_ip = self.dst_ip
-            self.dst_ip = tmp
-
-            tmp = self.src_port
-            self.src_port = self.dst_port
-            self.dst_port = tmp
+    # unify the direction of bidirectional flow
+    def reversal(self):
+        ret = TrafficFlowKey(self.dst_ip, self.src_ip, self.dst_port, self.src_port, self.proto)
+        return ret
 
 
 class TrafficFlow(object):
@@ -127,7 +138,8 @@ def get_highest_layer_tcp(tcp_data):
     return "tcp"
 
 
-def process_pcap(pcap_file, flow_list, log_list):
+def process_pcap(pcap_file, log_list):
+    log_list.append("pcap file: {}".format(pcap_file))
     pcap_fd = open(pcap_file, "rb")
     file_basename = os.path.basename(pcap_file)
     magic_head = pcap_fd.read(4)
@@ -143,17 +155,23 @@ def process_pcap(pcap_file, flow_list, log_list):
         print("Magic Header: {}".format(magic_head.hex()))
         return None
     
-    pkt_num = 1
+    # TrafficFlowKey: TrafficFlow
+    flow_list = dict()
+    pkt_num = 0
+    t1 = time.time()
     for ts, buf in pcap_reader:
+        # if pkt_num % 1000 == 0:
+        #     print("Processing #{}".format(pkt_num))
         eth = dpkt.ethernet.Ethernet(buf)
-        pkt_features = [0] * 11
+        pkt_features = [0.0] * 11
         pkt_features[FeatureList.sniff_time] = float(ts)
         pkt_features[FeatureList.packet_length] = len(buf)
+        
         ip_layer = None
-        if eth.type == dpkt.ethernet.ETH_TYPE_IP or eth.type == dpkt.ethernet.ETH_TYPE_IP6:
+        if eth.type == dpkt.ethernet.ETH_TYPE_IP:
             ip_layer = eth.data
         else:
-            log_list.append("{}: pkt #{} dont have a ip layer.".format(file_basename, pkt_num))
+            log_list.append("{}: pkt #{} dont have a ipv4 layer.".format(file_basename, pkt_num))
             continue
 
         tfkey = TrafficFlowKey("", "", 0, 0, 0)
@@ -163,87 +181,231 @@ def process_pcap(pcap_file, flow_list, log_list):
 
         udp = None
         tcp = None
-        highest_layer = "ip"
-
-        if isinstance(ip_layer, dpkt.ip.IP):
-            pkt_features[FeatureList.ip_flags] = ip_layer._flags_offset >> 13
-        elif isinstance(ip_layer, dpkt.ip.IP6):
-            highest_layer = "ipv6"
         
+        if isinstance(ip_layer, dpkt.ip.IP):
+            ip_flags = ip_layer._flags_offset >> 13
+            ip_frag_offset = ip_layer._flags_offset & 0x1FFF
+            if ip_frag_offset != 0 or ip_flags & 0x1:
+                log_list.append("#{}: IP fragments. Skip.".format(pkt_num))
+                continue
+            pkt_features[FeatureList.ip_flags] = ip_layer._flags_offset >> 13
+            pkt_features[FeatureList.highest_layer] = PROSTACK_IP
+            pkt_features[FeatureList.protocols_stack] = PROSTACK_ETH + PROSTACK_IP
         # UDP
         if isinstance(ip_layer.data, dpkt.udp.UDP):
             tfkey.proto = dpkt.ip.IP_PROTO_UDP
             udp = ip_layer.data
             tfkey.src_port = udp.sport
             tfkey.dst_port = udp.dport
-            highest_layer = get_highest_layer_udp(udp.data)
+            pkt_features[FeatureList.highest_layer] = PROSTACK_UDP
+            pkt_features[FeatureList.protocols_stack] += PROSTACK_UDP
+            pkt_features[FeatureList.udp_len] = udp.ulen
         # TCP
         elif isinstance(ip_layer.data, dpkt.tcp.TCP):
             tfkey.proto = dpkt.ip.IP_PROTO_TCP
             tcp = ip_layer.data
             tfkey.src_port = tcp.sport
             tfkey.dst_port = tcp.dport
-            highest_layer = get_highest_layer_tcp(tcp.data)
-        # ICMP
-        elif isinstance(ip_layer.data, dpkt.icmp.ICMP):
-            highest_layer = "icmp"
-            icmp = ip_layer.data
-            pkt_features[FeatureList.icmp_type] = icmp.type
-        # ICMPv6
-        elif isinstance(ip_layer.data, dpkt.icmp6.ICMP6):
-            highest_layer = "icmp6"
-            icmp6 = ip_layer.data
-            pkt_features[FeatureList.icmp_type] = icmp6.type
-
-        # other
+            pkt_features[FeatureList.highest_layer] = PROSTACK_TCP
+            pkt_features[FeatureList.protocols_stack] += PROSTACK_TCP
+            pkt_features[FeatureList.tcp_flags] = tcp.flags
+            pkt_features[FeatureList.tcp_ack] = tcp.ack
+            pkt_features[FeatureList.tcp_win] = tcp.win
+            pkt_features[FeatureList.tcp_len] = len(buf) - 14 - 20 - 20
+        # other, it is neither TCP nor UDP.
         else:
-            log_list.append("other protocol, #{}".format(pkt_num))
+            log_list.append("#{}: Neither TCP nor UDP. Unknown protocol.".format(pkt_num))
+            continue
         
-        pkt_features[FeatureList.highest_layer] = int(hashlib.sha256(highest_layer.encode('utf-8')).hexdigest(), 16) % 10 ** 8
-
         # if pkt_num > 26123:
         #     break
         pkt_num += 1
-
-        tfkey.order_ports()
+        # Filter NBNS
         if tfkey.src_port == 0 or tfkey.dst_port == 137:
             continue
 
         if flow_list is not None:
-            if tfkey not in flow_list.keys():
+            bwd_tfkey = tfkey.reversal()
+            if tfkey in flow_list.keys():
+                flow_list[tfkey].add_pkt_features(pkt_features)
+            elif bwd_tfkey in flow_list.keys():
+                flow_list[bwd_tfkey].add_pkt_features(pkt_features)
+            else:
                 flow_list[tfkey] = TrafficFlow(tfkey)
-            flow_list[tfkey].add_pkt_features(pkt_features)
+            
+        
+        log_list.append("#{}, ({}, {}, {}, {}, {}):".format(pkt_num, tfkey.src_ip, tfkey.src_port, tfkey.dst_ip, tfkey.dst_port, tfkey.proto))
+        log_list.append("{}".format(pkt_features))
 
-        # limit packets num
-        # if max_sample > 0 and pkt_cnt >= max_sample:
-        #     break
+    print("pkt_cnt: {}, flow cnt: {}".format(pkt_num, len(flow_list)))
+    print("Completed file {} in {:.3f} seconds".format(pcap_file, time.time() - t1))
+
+    # debug
+    log_list.append("======={} flow debug==========".format(pcap_file))
+    for k in flow_list.keys():
+        log_list.append("\"{}\", {}, \"{}\", {}".format(k.src_ip, k.src_port, k.dst_ip, k.dst_port))
+    log_list.append("======={} flow debug end=========".format(pcap_file))
+
+    pcap_fd.close()
+    return flow_list
 
 
-def extract_pcaps(dataset_folder, output_folder, traffic_type, dataset_type):
-    print(dataset_folder, output_folder, traffic_type, dataset_type)
-    extract_log_fd = open(os.path.join(output_folder, "extract_pcaps.log"), "a")
-
-    # elements type: {TrafficKey: TrafficFlow}
-    flow_dict = Manager().dict()
-    log_list = Manager().list()
-    pro_pool = Pool(3)
+def normalize_packet(pkt):
+    ret_arr = [0.0] * 11
+    for i in range(1, 11):
+        ret_arr[i] = 1 - (feature_value_range[i][1] - pkt[i]) / (feature_value_range[i][1] - feature_value_range[i][0])
+    return ret_arr
 
 
-    for row in log_list:
-        extract_log_fd.write(row + "\n")
-    extract_log_fd.close()
+def transfer_to_feature(flow, feature_list):
+    pkt_num = flow.pkt_cnt
+    pkt_seq = 0
+    pkt_idx = 0
+    now = 0
+    start_ts = flow.pkt_list[0][0]
+    diff = 0
+    sample_cnt = 0
+    time_win = list()
+    while pkt_idx < pkt_num:
+        # if pkt_idx % 20 == 0:
+        #     print("In transfer_to_feature, pkt_idx: {}".format(pkt_idx))
+        pkt = flow.pkt_list[pkt_idx]
+        now = pkt[0]
+        diff = now - start_ts
+
+        # Require a new time window.
+        if diff - win_time_period > 1e-6:
+            # Padding last window
+            while pkt_seq < win_max_pkt:
+                time_win.append([0.0] * 11)
+                pkt_seq += 1
+            feature_list.append(time_win)
+            sample_cnt += 1
+            # New time window
+            time_win = list()
+            pkt_seq = 0
+            start_ts = pkt[0]
+            f_val_arr = normalize_packet(pkt)
+            f_val_arr[0] = 0
+            pkt_seq += 1
+            time_win.append(f_val_arr)
+        else:
+            if pkt_seq > win_max_pkt - 1:
+                pkt_idx += 1
+                continue
+            f_val_arr = normalize_packet(pkt)
+            f_val_arr[0] = diff
+            time_win.append(f_val_arr)
+            pkt_seq += 1
+        pkt_idx += 1
+
+    # padding the last one
+    while pkt_seq < win_max_pkt:
+        time_win.append([0.0] * 11)
+        pkt_seq += 1
+    feature_list.append(time_win)
+    sample_cnt += 1
+    return sample_cnt
+
+def calculate_flow_features(flow_list, feature_list, label_list, label_count, flow_count):
+    for f_key, flow in flow_list.items():
+        if flow.pkt_cnt < flow_len_threshold:
+            continue
+        new_samples = transfer_to_feature(flow, feature_list)
+        if f_key.src_ip in DOS2019_FLOWS['attackers'] or f_key.dst_ip in DOS2019_FLOWS['attackers']:
+            label_list += [1] * new_samples
+            label_count[0] += new_samples
+            flow_count[0] += 1
+        else:
+            label_list += [0] * new_samples
+            label_count[1] += new_samples
+            flow_count[1] += 1
     return
 
 
-def preprocess_data():
-    pass
+def balance_dataset(feature_list, label_list):
+    loop_num = len(label_list)
+    i = 0
+    ddos_samples = list()
+    ddos_cnt = 0
+    benign_samples = list()
+    benign_cnt = 0
+    while i < loop_num:
+        if label_list[i] == 0:
+            ddos_samples.append(feature_list[i])
+            ddos_cnt += 1
+        else:
+            benign_samples.append(feature_list[i])
+            benign_cnt += 1
+        i += 1
+    
+    sample_cnt = min(benign_cnt, ddos_cnt)
 
+    random.shuffle(ddos_samples)
+    ddos_samples = ddos_samples[:sample_cnt]
+    random.shuffle(benign_samples)
+    benign_samples = benign_samples[:sample_cnt]
+    ret_feature_list = ddos_samples + benign_samples
+    ret_label_list = ([0] * sample_cnt) + ([1] * sample_cnt)
+    return ret_feature_list, ret_label_list
+
+def extract_pcaps(dataset_folder, output_folder):
+    print(dataset_folder, output_folder)
+    feature_list = list()
+    label_list = list()
+    extract_log_fd = open(os.path.join(output_folder, "extract_pcaps.log"), "w")
+    # ddos samples, bengin samples
+    label_count = [0, 0]
+    total_flow = 0
+    # ddos flows, bengin flows
+    flow_count = [0, 0]
+    
+    for f in os.listdir(dataset_folder):
+        if os.path.splitext(f)[-1] != ".pcap":
+            continue
+        print("Processing {}".format(f))
+        log_list = list()
+        flow_list = process_pcap(os.path.join(dataset_folder, f), log_list)
+        total_flow += len(flow_list)
+        # dump log
+        for row in log_list:
+            extract_log_fd.write(row + "\n")
+        
+        calculate_flow_features(flow_list, feature_list, label_list, label_count, flow_count)
+
+    print("total flow: {}, ddos flows: {}, bengin flows: {}".format(total_flow, flow_count[0], flow_count[1]))
+    print("total samples: {}, ddos samples: {}, bengin samples: {}".format(len(feature_list), label_count[0], label_count[1]))
+    
+    feature_list, label_list = balance_dataset(feature_list, label_list)
+
+    feature_list = np.array(feature_list)
+    label_list = np.array(label_list)
+    X_train, X_test, Y_train, Y_test = train_test_split(feature_list, label_list, train_size=0.9, shuffle=True)
+    X_train, X_val, Y_train, Y_val = train_test_split(X_train, Y_train, train_size=0.9, shuffle=True)
+
+    log_string = "X_train shape: {}, Y_train shape: {}\n X_val shape: {}, Y_val shape: {}\n X_test shape: {} Y_test shape: {}".format(
+        X_train.shape, Y_train.shape, X_val.shape, Y_val.shape, X_test.shape, Y_test.shape)
+    print(log_string)
+
+    hf = h5py.File(os.path.join(output_folder, "dataset_train.hdf5"), "w")
+    hf.create_dataset("set_x", data=X_train)
+    hf.create_dataset("set_y", data=Y_train)
+    hf.close()
+
+    hf = h5py.File(os.path.join(output_folder, "dataset_val.hdf5"), "w")
+    hf.create_dataset("set_x", data=X_val)
+    hf.create_dataset("set_y", data=Y_val)
+    hf.close()
+
+    hf = h5py.File(os.path.join(output_folder, "dataset_test.hdf5"), "w")
+    hf.create_dataset("set_x", data=X_test)
+    hf.create_dataset("set_y", data=Y_test)
+    hf.close()
+
+    extract_log_fd.close()
+    return
 
 def main():
-
-    help_string = 'Usage[0]: python3 lucid_dataset_parser.py --dataset_type <dataset_name> --dataset_folder <folder path> --dataset_id <dataset identifier> --packets_per_flow <n> --time_window <t>\n' \
-                  'Usage[1]: python3 lucid_dataset_parser.py --preprocess_folder <folder path>'
-
     parser = argparse.ArgumentParser(
         description='Dataset parser',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -252,59 +414,8 @@ def main():
                         help='Folder with the dataset')
     parser.add_argument('-o', '--output_folder', nargs='+', type=str,
                         help='Output folder')
-    parser.add_argument('-f', '--traffic_type', default='all', nargs='+', type=str,
-                        help='Type of flow to process (all, benign, ddos)')
-    parser.add_argument('-p', '--preprocess_folder', nargs='+', type=str,
-                        help='Folder with preprocessed data')
-    parser.add_argument('--preprocess_file', nargs='+', type=str,
-                        help='File with preprocessed data')
-    parser.add_argument('-b', '--balance_folder', nargs='+', type=str,
-                        help='Folder where balancing datasets')
-    parser.add_argument('-n', '--packets_per_flow', nargs='+', type=str,
-                        help='Packet per flow sample')
-    parser.add_argument('-s', '--samples', default=float('inf'), type=int,
-                        help='Number of training samples in the reduced output')
-    parser.add_argument('-i', '--dataset_id', nargs='+', type=str,
-                        help='String to append to the names of output files')
-    parser.add_argument('-m', '--max_flows', default=0, type=int,
-                        help='Max number of flows to extract from the pcap files')
-    parser.add_argument('-l', '--label', default=1, type=int,
-                        help='Label assigned to the DDoS class')
-
-    parser.add_argument('-t', '--dataset_type', nargs='+', type=str,
-                        help='Type of the dataset. Available options are: DOS2017, DOS2018, DOS2019, SYN2020')
-
-    parser.add_argument('-w', '--time_window', nargs='+', type=str,
-                        help='Length of the time window')
-
-    parser.add_argument('--no_split', help='Do not split the dataset', action='store_true')
 
     args = parser.parse_args()
-
-    if args.packets_per_flow is not None:
-        max_flow_len = int(args.packets_per_flow[0])
-    else:
-        max_flow_len = MAX_FLOW_LEN
-
-    if args.time_window is not None:
-        time_window = float(args.time_window[0])
-    else:
-        time_window = TIME_WINDOW
-
-    if args.dataset_id is not None:
-        dataset_id = str(args.dataset_id[0])
-    else:
-        dataset_id = ''
-
-    if args.dataset_type:
-        dataset_type = str(args.dataset_type[0])
-    else:
-        dataset_type = ""
-
-    if args.traffic_type is not None:
-        traffic_type = str(args.traffic_type[0])
-    else:
-        traffic_type = 'all'
 
     if args.dataset_folder:
         dataset_folder = args.dataset_folder[0]
@@ -312,20 +423,9 @@ def main():
             output_folder = args.output_folder[0]
         else:
             output_folder = dataset_folder
-        extract_pcaps(dataset_folder, output_folder, traffic_type, dataset_type)
-
-    if args.preprocess_folder:
-        pass
+        extract_pcaps(dataset_folder, output_folder)
     
-
-    if args.dataset_folder is None and args.preprocess_folder is None and args.preprocess_file is None and args.balance_folder is None:
-        print (help_string)
-    if args.dataset_type is None and args.dataset_folder is not None:
-        print("Please specify the dataset type (DOS2017, DOS2018, DOS2020)!")
-        print(help_string)
-    if args.output_folder is None and args.balance_folder is not None:
-        print("Please specify the output folder!")
-        print(help_string)
+    
 
 if __name__ == '__main__':
     main()

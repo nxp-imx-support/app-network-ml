@@ -8,20 +8,11 @@ import numpy as np
 import tensorflow as tf
 import glob
 import h5py
+import sys
 
-  # defined by tf.keras
-
-
-# # path of the directory where you want to save your model
-# frozen_out_path = 'model'  # model path
-# # name of the .pb file
-# frozen_graph_filename = "facemask"  #model name
-
-
-keras_model = "../output/10t-10n-DOS2019-LUCID"
-out_tflite = '../output/10t-10n-DOS2019-LUCID-quant-uint8.tflite'
-
-dataset_folder = "../sample-dataset"
+dataset_path = ""
+out_tflite = ""
+keras_model = ""
 
 def load_dataset(path):
     filename = glob.glob(path)[0]
@@ -36,7 +27,7 @@ def load_dataset(path):
 
 
 def get_representative_dataset_gen():
-    X_train, _ = load_dataset(dataset_folder + "/*" + '-train.hdf5')
+    X_train, _ = load_dataset(dataset_path)
     print(X_train.shape)
     for x in X_train:
         input_data = np.expand_dims(x, axis=0)
@@ -53,17 +44,23 @@ def keras2tflite(model):
 
     converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
 
-    converter.inference_input_type = tf.int8
-    converter.inference_output_type = tf.int8
-
+    # converter.inference_input_type = tf.int8
+    # converter.inference_output_type = tf.int8
 
     tflite_model = converter.convert()
     open(out_tflite, "wb").write(tflite_model)
     print("successfully convert to tflite done")
     print("save model at: {}".format(out_tflite))
 
+if __name__ == '__main__':
+    if len(sys.argv) != 4:
+        print("Usage: python3 {} <keras_model_path> <output_model_path> <representative_dataset_path>".format(__file__))
+        exit(0)
+    
+    keras_model = sys.argv[1]
+    out_tflite = sys.argv[2]
+    dataset_path = sys.argv[3]
 
-
-model = tf.keras.models.load_model(keras_model, custom_objects={'tf': tf}, compile=False)
-model.summary()
-keras2tflite(model)
+    model = tf.keras.models.load_model(keras_model, custom_objects={'tf': tf}, compile=False)
+    model.summary()
+    keras2tflite(model)

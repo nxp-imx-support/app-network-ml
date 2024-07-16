@@ -14,8 +14,8 @@ const int LOG_LEVEL_DEBUG_2 = 8;
 const int LOG_LEVEL_DEBUG_3 = 16;
 const int LOG_LEVEL_ERROR = 128;
 
-const int LOG_LEVEL_DEBUG = LOG_LEVEL_DEBUG_0;
-const int G_LOG_LEVEL = (LOG_LEVEL_ERROR | LOG_LEVEL_DEBUG | LOG_LEVEL_INFO);
+const int LOG_LEVEL_DEBUG = LOG_LEVEL_DEBUG_3;
+const int G_LOG_LEVEL = (LOG_LEVEL_DEBUG | LOG_LEVEL_ERROR);
 
 #define LOG_INFO(fmt, ...) \
     print_log(LOG_LEVEL_INFO, __FILE__, __LINE__, __func__, "INFO", fmt, ##__VA_ARGS__)
@@ -36,6 +36,7 @@ struct array_desc {
     uint64_t col;
 };
 
+void print_bytes_hex(const char* buf, size_t len);
 
 void print_log(int log_level, const char* file_name, unsigned int line, const char* func_name, const char* tag, const char* fmt, ...);
 

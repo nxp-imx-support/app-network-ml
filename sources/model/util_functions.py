@@ -54,7 +54,8 @@ def load_dataset(path):
     set_x_orig = np.array(dataset["set_x"][:])  # features
     set_y_orig = np.array(dataset["set_y"][:])  # labels
 
-    X_train = np.reshape(set_x_orig, (set_x_orig.shape[0], set_x_orig.shape[1], set_x_orig.shape[2], 1))
+    print("X_train shape: {}, type: {}".format(set_x_orig.shape, type(set_x_orig)))
+    X_train = set_x_orig.reshape((set_x_orig.shape[0], set_x_orig.shape[1], set_x_orig.shape[2], 1))
     Y_train = set_y_orig#.reshape((1, set_y_orig.shape[0]))
 
     return X_train, Y_train

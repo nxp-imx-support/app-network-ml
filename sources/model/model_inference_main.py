@@ -18,6 +18,7 @@ quit_flag = False
 UINT64_SIZE = 8
 DOUBLE_SIZE = 8
 TIME_WIN_SIZE = 10
+# 1 second
 time_period = 1
 inference_no = 1
 
@@ -100,20 +101,19 @@ def model_predict(args, x_data):
     log_debug("x_data shape: {}".format(x_data.shape))
     log_file.write("x_data shape: {}\n".format(x_data.shape))
     x_data = x_data.reshape((-1, TIME_WIN_SIZE, 11, 1))
-    sample_len = x_data.shape[0]
     
     # warming up the model (necessary for the GPU)
-    cnt = 0
-    for vec in x_data:
-        if cnt > 10 or cnt >= sample_len:
-            break
-        input_data = vec / input_scale + input_zero_point
-        input_data = np.expand_dims(input_data, axis=0).astype(input_desc["dtype"])
-        model.set_tensor(input_desc['index'], input_data)
-        model.invoke()
-        tmp = np.squeeze(model.get_tensor(output_desc['index']))
-        tmp = input_scale * (tmp - input_zero_point)
-        cnt += 1
+    # cnt = 0
+    # for vec in x_data:
+    #     if cnt > 10 or cnt >= sample_len:
+    #         break
+    #     input_data = vec / input_scale + input_zero_point
+    #     input_data = np.expand_dims(input_data, axis=0).astype(input_desc["dtype"])
+    #     model.set_tensor(input_desc['index'], input_data)
+    #     model.invoke()
+    #     tmp = np.squeeze(model.get_tensor(output_desc['index']))
+    #     tmp = input_scale * (tmp - input_zero_point)
+    #     cnt += 1
 
     # Start inference
     Y_pred = list()
@@ -121,21 +121,13 @@ def model_predict(args, x_data):
     delta = 0
     
     for vec in x_data:
-        input_data = vec / input_scale + input_zero_point
-        # log_debug("input_data shape: {}, type: {}".format(input_data.shape, type(input_data[0][0][0])))
-
-        tmp_log = input_data.reshape((-1, 11))
-        log_file.write("\ninput data type: {}\n".format(type(tmp_log[0][0])))
-        log_file.write("{}\n".format(tmp_log))
-
-        input_data = np.expand_dims(input_data, axis=0).astype(input_desc["dtype"])
+        input_data = np.expand_dims(vec, axis=0).astype(input_desc["dtype"])
         model.set_tensor(input_desc['index'], input_data)
         pt0 = time.time()
         model.invoke()
         delta = time.time() - pt0
         tmp = np.squeeze(model.get_tensor(output_desc['index']))
-        tmp = input_scale * (tmp - input_zero_point)
-        Y_pred.append(1.0 if tmp > 0.5 else 0.0)
+        Y_pred.append(1.0 if tmp != 0 else 0.0)
         avg_time += delta
     Y_pred = np.array(Y_pred)
 
@@ -194,7 +186,7 @@ def main():
             # poll timeout 10ms
             events = poll_fds.poll(100)
             for fd, flag in events:
-                log_debug("event come, fd: {}, flag: {}".format(fd, flag))
+                # log_debug("event come, fd: {}, flag: {}".format(fd, flag))
                 if ready_response == False and fd == reader_fd and flag & select.POLLIN:
                     log_debug("Read from pipe...")
                     buf = os.read(fd, UINT64_SIZE * 2)
@@ -204,19 +196,24 @@ def main():
                     left_bytes = array_desc.row * array_desc.col * DOUBLE_SIZE
                     tmp = b''
                     buf = b''
-                    while left_bytes > 0:
+                    while left_bytes > 0 and quit_flag == False:
                         tmp = os.read(fd, 65536)
                         buf += tmp
                         left_bytes -= len(tmp)
+                    if quit_flag:
+                        break
                     # buf = os.read(fd, array_desc.row * array_desc.col * DOUBLE_SIZE)
                     x_data = unpack_double_type_array(array_desc, buf)
                     # print(x_data)
-                    log_debug("Start model predict.")
+                    log_debug("Start model prediction.")
                     response_array = model_predict(model_args, x_data)
+                    log_debug("Finish model prediction.")
                     if response_array is None:
                         quit_flag = True
                         break
                     ready_response = True
+                    if quit_flag:
+                        break
 
                 if ready_response and fd == writer_fd and flag & select.POLLOUT:
                     log_debug("Prepare to write to pipe.")
@@ -230,7 +227,7 @@ def main():
                     os.write(fd, desc_buf)
                     os.write(fd, buf)
                     ready_response = False
-                    log_debug("Write finished.")
+                    log_debug("Finish writing.")
 
     log_info("Clean up...")
     poll_fds.unregister(reader_fd)

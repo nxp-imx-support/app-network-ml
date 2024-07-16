@@ -12,7 +12,7 @@ import time
 from lucid_dataset_parser import process_live_traffic, dataset_to_list_of_fragments
 from util_functions import static_min_max, normalize_and_padding
 
-OUTPUT_FOLDER = "../output/"
+OUTPUT_FOLDER = "../../output/"
 PREDICT_HEADER = ['Model', 'Time', 'Packets', 'Samples', 'DDOS%', 'Accuracy', 'F1Score', 'TPR', 'FPR','TNR', 'FNR', 'Source']
 DEFAULT_EPOCHS = 100
 
@@ -105,12 +105,11 @@ def inference_process(model, X):
     for vec in X:
         if cnt > 10:
             break
-        input_data = vec / input_scale + input_zero_point
-        input_data = np.expand_dims(input_data, axis=0).astype(input_desc["dtype"])
+        # input_data = vec / input_scale + input_zero_point
+        # input_data = np.expand_dims(input_data, axis=0).astype(input_desc["dtype"])
+        input_data = np.expand_dims(vec, axis=0).astype(input_desc["dtype"])
         model.set_tensor(input_desc['index'], input_data)
         model.invoke()
-        tmp = np.squeeze(model.get_tensor(output_desc['index']))
-        tmp = input_scale * (tmp - input_zero_point)
         cnt += 1
 
     # start inference
@@ -118,19 +117,25 @@ def inference_process(model, X):
     avg_time = 0
     delta = 0
     
+    tmp_log = open("tmp_log.txt", "w")
+    print("open log.")
     for vec in X:
-        input_data = vec / input_scale + input_zero_point
-        input_data = np.expand_dims(input_data, axis=0).astype(input_desc["dtype"])
+        # input_data = vec / input_scale + input_zero_point
+        # input_data = np.expand_dims(input_data, axis=0).astype(input_desc["dtype"])
+        input_data = np.expand_dims(vec, axis=0).astype(input_desc["dtype"])
         model.set_tensor(input_desc['index'], input_data)
         pt0 = time.time()
         model.invoke()
         delta = time.time() - pt0
         tmp = np.squeeze(model.get_tensor(output_desc['index']))
-        tmp = input_scale * (tmp - input_zero_point)
+        init_tmp = tmp
+        # tmp = input_scale * (tmp - input_zero_point)
+        tmp_log.write("init tmp: {}, tmp: {}\n".format(init_tmp, tmp))
         Y_pred.append(tmp > 0.5)
         avg_time += delta
     Y_pred = np.array(Y_pred)
-    return Y_pred
+    tmp_log.close()
+    return Y_pred, avg_time
 
 
 def predict(args):
@@ -144,7 +149,8 @@ def predict(args):
 
     ext_delegate_options = {}
     # ['./sample-dataset/10t-10n-DOS2019-dataset-test.hdf5']
-    dataset_filelist = glob.glob(args.predict + "/*test.hdf5")
+    dataset_filelist = glob.glob(args.predict)
+    print(dataset_filelist)
 
     if args.model is not None:
         model_path = args.model
@@ -154,69 +160,57 @@ def predict(args):
     # model_path: ./output/10t-10n-DOS2019-LUCID.tflite
     # 10t-10n-DOS2019-LUCID.tflite
     model_filename = model_path.split('/')[-1].strip()
-    # 10t-10n
-    filename_prefix = model_filename.split('-')[0].strip() + '-' + model_filename.split('-')[1].strip() + '-'
-    # DOS2019-LUCID
-    model_name_string = model_filename.split(filename_prefix)[1].strip().split('.')[0].strip()
     # model = tf.lite.Interpreter(model_path=model_path)
     model = load_tfl_model(model_path, args.ext_delegate, ext_delegate_options)
-    model.allocate_tensors()
-
-    input_desc = model.get_input_details()[0]
-    output_desc = model.get_output_details()[0]
-
-    print("input_desc_type {}".format(input_desc['dtype']))
-    input_scale, input_zero_point = input_desc['quantization']
-    print("input_scale: {}; input_zero_point: {}".format(input_scale, input_zero_point))
     
     # warming up the model (necessary for the GPU)
     warm_up_file = dataset_filelist[0]
-    filename = warm_up_file.split('/')[-1].strip()
-    if filename_prefix in filename:
-        X, Y = load_dataset(warm_up_file)
-        Y_pred = list()
-        cnt = 0
-        for vec in X:
-            if cnt > 10:
-                break
-            input_data = vec / input_scale + input_zero_point
-            input_data = np.expand_dims(input_data, axis=0).astype(input_desc["dtype"])
-            model.set_tensor(input_desc['index'], input_data)
-            model.invoke()
-            tmp = np.squeeze(model.get_tensor(output_desc['index']))
-            tmp = input_scale * (tmp - input_zero_point)
-            Y_pred.append(tmp > 0.5)
-            cnt += 1
+    X, Y = load_dataset(warm_up_file)
+
+    Y_pred, avg_time = inference_process(model, X)
+    [packets] = count_packets_in_dataset([X])
+    report_results(Y, Y_pred, packets, model_path, dataset_filelist, avg_time, predict_writer)
+'''
+    for vec in X:
+        if cnt > 10:
+            break
+        # input_data = vec / input_scale + input_zero_point
+        # input_data = np.expand_dims(input_data, axis=0).astype(input_desc["dtype"])
+        model.set_tensor(input_desc['index'], input_data)
+        model.invoke()
+        tmp = np.squeeze(model.get_tensor(output_desc['index']))
+        tmp = input_scale * (tmp - input_zero_point)
+        Y_pred.append(tmp > 0.5)
+        cnt += 1
 
     # Start inference
     for dataset_file in dataset_filelist:
         filename = dataset_file.split('/')[-1].strip()
-        if filename_prefix in filename:
-            X, Y = load_dataset(dataset_file)
-            [packets] = count_packets_in_dataset([X])
+        X, Y = load_dataset(dataset_file)
+        [packets] = count_packets_in_dataset([X])
 
-            Y_pred = list()
-            Y_true = Y
-            avg_time = 0
-            delta = 0
-            
-            for vec in X:
-                input_data = vec / input_scale + input_zero_point
-                input_data = np.expand_dims(input_data, axis=0).astype(input_desc["dtype"])
-                model.set_tensor(input_desc['index'], input_data)
-                pt0 = time.time()
-                model.invoke()
-                delta = time.time() - pt0
-                tmp = np.squeeze(model.get_tensor(output_desc['index']))
-                tmp = input_scale * (tmp - input_zero_point)
-                Y_pred.append(tmp > 0.5)
-                avg_time += delta
-            Y_pred = np.array(Y_pred)
+        Y_pred = list()
+        Y_true = Y
+        avg_time = 0
+        delta = 0
+        
+        for vec in X:
+            input_data = vec / input_scale + input_zero_point
+            input_data = np.expand_dims(input_data, axis=0).astype(input_desc["dtype"])
+            model.set_tensor(input_desc['index'], input_data)
+            pt0 = time.time()
+            model.invoke()
+            delta = time.time() - pt0
+            tmp = np.squeeze(model.get_tensor(output_desc['index']))
+            tmp = input_scale * (tmp - input_zero_point)
+            Y_pred.append(tmp > 0.5)
+            avg_time += delta
+        Y_pred = np.array(Y_pred)
 
-            report_results(np.squeeze(Y_true), Y_pred, packets, model_name_string, filename, avg_time,predict_writer)
-            predict_file.flush()
+        report_results(np.squeeze(Y_true), Y_pred, packets, model_filename, filename, avg_time,predict_writer)
+        predict_file.flush()
     predict_file.close()
-
+'''
 
 def predict_live(args):
     predict_file = open(OUTPUT_FOLDER + 'predictions-' + time.strftime("%Y%m%d-%H%M%S") + '.csv', 'a', newline='')

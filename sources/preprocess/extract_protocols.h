@@ -20,7 +20,6 @@
 #define ICMPV6_PROTOCOL_NUM 58
 
 
-
 const __u16 PROSTACK_ETH = 1;
 const __u16 PROSTACK_IP = 1 << 1;
 const __u16 PROSTACK_TCP = 1 << 2;
@@ -37,11 +36,18 @@ const uint64_t v6_key_mask[V6_FLOW_KEY_SIZE] = { 0xFFFFFFFF00FF0000, 0xFFFFFFFFF
                                                  0xFFFFFFFFFFFFFFFF, 0x0};
 
 // If the number of pakcets in a flow > flow_len, call the AI inference process.
-const size_t flow_len_threshold = 24;
+const size_t min_flow_len_threshold = 1;
+const size_t max_flow_len_threshold = 50;
 // Max packets in a time window.
 const size_t win_max_pkt = 10;
 // Time period (second) in a time window.
 const int win_time_period = 10;
+
+/**  Threshold for attack count. 
+ * If the number of attacks on one IP is greater than this value,
+ * the IP is prohibited.
+*/
+const int attack_threshold = 100;
 
 /**
  * IPv4 flow table key
@@ -88,15 +94,15 @@ struct v4_packet_info {
 
 // Ordered by features list in v4_packet_info
 const uint32_t feature_value_range[][2] = {{0, 10}, 
-                                           {0, 0xFFFFFFFF}, 
+                                           {0, 0xFFFF}, 
+                                           {0, 0x0F},
                                            {0, 0xFFFF},
                                            {0, 0xFFFF},
                                            {0, 0xFFFF},
                                            {0, 0xFFFFFFFF},
-                                           {0, 0xFFFFFFFF},
-                                           {0, 0xFF},
                                            {0, 0xFFFF},
-                                           {0, 0xFFFFFFFF},
+                                           {0, 0xFFFF},
+                                           {0, 0xFFFF},
                                            {0, 0xFF}};
 
 /**
@@ -177,12 +183,12 @@ void free_v4_packet_info(struct v4_packet_info* ptr);
  * @param l4ptype: L4 protocol type
  * @retval void
 */
-void handle_protocol_stack(struct rte_mbuf *pkt);
+void handle_protocol_stack(struct rte_mbuf *pkt, int *is_ddos);
 
 /**
  * Startup a new thread. Preprocess flow table and send it to AI inference process via pipe
 */
-void flow_table_inference();
+void flow_table_inference(volatile bool* force_quit);
 
 /**
  * Clean up v4 flow table
