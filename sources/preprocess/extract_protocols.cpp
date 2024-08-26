@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <algorithm>
 
 #include <sys/time.h>
 #include <sys/syscall.h>
@@ -15,12 +16,10 @@
 #include <sys/stat.h>
 #include <pthread.h>
 
-
-#include "utils.h"
 #include "extract_protocols.h"
 
 /* IPv4 and IPv6 flow table */
-std::unordered_map<uint64_t, std::vector<struct v4_packet_info*>> v4_flow_table;
+std::unordered_map<uint64_t, v4_flow_info*> v4_flow_table;
 pthread_mutex_t v4_flow_table_lock = PTHREAD_MUTEX_INITIALIZER;
 
 std::unordered_map<uint64_t, std::vector<struct v6_packet_info*>> v6_flow_table;
@@ -28,16 +27,8 @@ std::unordered_map<uint64_t, std::vector<struct v6_packet_info*>> v6_flow_table;
 // Record inferenced result from AI model.
 std::vector<struct inferenced_flow_result> result_list;
 
-/* Flow flag 
- * flag value: int 
- * 0 == Unknown
- * 1 == DDoS
- * 2 == Begin
- */
-std::unordered_map<uint64_t, int> flow_flag;
-
 // DDoS ip pair, ((ip1, ip2) => ddos_cnt)
-std::unordered_map<uint64_t, int> ddos_ip_list;
+std::unordered_map<uint64_t, int> ddos_ip_cnt_list;
 pthread_mutex_t ddos_ip_list_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /* Pipe for communication with AI inference process 
@@ -270,11 +261,11 @@ void handle_protocol_stack(struct rte_mbuf *pkt, int *is_ddos) {
         ddos_check_key_bwd <<= 32;
         ddos_check_key_bwd |= v4_pkt->flow_key.ip_src;
         pthread_mutex_lock(&ddos_ip_list_lock);
-        auto it_fwd = ddos_ip_list.find(ddos_check_key_fwd);
-        auto it_bwd = ddos_ip_list.find(ddos_check_key_bwd);
-        if (it_fwd != ddos_ip_list.end() && it_fwd->second >= attack_threshold)
+        auto it_fwd = ddos_ip_cnt_list.find(ddos_check_key_fwd);
+        auto it_bwd = ddos_ip_cnt_list.find(ddos_check_key_bwd);
+        if (it_fwd != ddos_ip_cnt_list.end() && it_fwd->second >= attack_threshold)
             *is_ddos = 1;
-        else if (it_bwd != ddos_ip_list.end() && it_bwd->second >= attack_threshold)
+        else if (it_bwd != ddos_ip_cnt_list.end() && it_bwd->second >= attack_threshold)
             *is_ddos = 1;
         pthread_mutex_unlock(&ddos_ip_list_lock);
 
@@ -351,15 +342,18 @@ void handle_protocol_stack(struct rte_mbuf *pkt, int *is_ddos) {
         pthread_mutex_lock(&v4_flow_table_lock);
         auto it = v4_flow_table.find(flow_hash_key);
         auto it_bwd = v4_flow_table.find(flow_hash_key_bwd);
-        if (it != v4_flow_table.end() && it->second.size() < max_flow_len_threshold) {
-            it->second.push_back(v4_pkt);
-        } else if (it_bwd != v4_flow_table.end() && it_bwd->second.size() < max_flow_len_threshold) {
-            it_bwd->second.push_back(v4_pkt);
+        if (it != v4_flow_table.end() && it->second->flow_pkt_list.size() < max_flow_len_threshold) {
+            it->second->flow_pkt_list.push_back(v4_pkt);
+        } else if (it_bwd != v4_flow_table.end() && it_bwd->second->flow_pkt_list.size() < max_flow_len_threshold) {
+            it_bwd->second->flow_pkt_list.push_back(v4_pkt);
         } else {
+            v4_flow_info* flow_item = new v4_flow_info();
+            if (flow_item == NULL) return;
+
+            flow_item->flow_pkt_list.push_back(v4_pkt);
             v4_flow_table.insert(
-                std::pair<uint64_t, std::vector<struct v4_packet_info*>>(
-                    flow_hash_key, std::vector<struct v4_packet_info*>({v4_pkt})));
-            flow_flag.insert(std::pair<uint64_t, int>(flow_hash_key, 0));
+                std::pair<uint64_t, v4_flow_info*>(
+                    flow_hash_key, flow_item));
         }
         pthread_mutex_unlock(&v4_flow_table_lock);
     }
@@ -372,29 +366,30 @@ void handle_protocol_stack(struct rte_mbuf *pkt, int *is_ddos) {
 
 void print_v4_flow_table() {
     printf("In print_v4_flow_table()\n");
-    if (v4_flow_table.empty())
-        return;
+
+    pthread_mutex_lock(&v4_flow_table_lock);
+    if (v4_flow_table.empty()) { pthread_mutex_unlock(&v4_flow_table_lock); return; }
+    
     printf("v4 flow count: %lu\n", v4_flow_table.size());
     for (auto it = v4_flow_table.begin(); it != v4_flow_table.end(); ++it) {
         printf("========================\n");
         printf("=====New flow begin=====\n");
-        auto vec = it->second;
-        for (auto vec_it = vec.begin(); vec_it != vec.end(); ++vec_it)
+        auto flow_item = it->second;
+        for (auto vec_it = flow_item->flow_pkt_list.begin(); vec_it != flow_item->flow_pkt_list.end(); ++vec_it)
             print_v4_packet_info(*vec_it);
         printf("=====Flow end=====\n");
         printf("==================\n");
     }
+    pthread_mutex_unlock(&v4_flow_table_lock);
 }
 
 void v4_flow_table_cleanup() {
-    // print_v4_flow_table();
     pthread_mutex_lock(&v4_flow_table_lock);
     if (v4_flow_table.empty())
         return;
     for (auto it = v4_flow_table.begin(); it != v4_flow_table.end(); ++it) {
-        auto vec = it->second;
-        for (auto vec_it = vec.begin(); vec_it != vec.end(); ++vec_it)
-            free_v4_packet_info(*vec_it);
+        v4_flow_info* flow_item = it->second;
+        delete flow_item;
     }
     v4_flow_table.clear();
     pthread_mutex_unlock(&v4_flow_table_lock);
@@ -534,21 +529,27 @@ void calculate_flow_features(std::vector<pktFeaturePtr>& feature_list, std::vect
     // walk through flow_table
     pthread_mutex_lock(&v4_flow_table_lock);
     for (auto it = v4_flow_table.begin(); it != v4_flow_table.end(); ++it) {
+        if (feature_list.size() > sample_upper_size)
+            break;
+        
+        v4_flow_info* flow_item = it->second;
         // If this flow was tagged, it doesn't need to inference again.
-        if (flow_flag[it->first] != 0) {
+        if (flow_item->flow_label != 0) {
             continue;
         }
-        std::vector<struct v4_packet_info*>& item = it->second;
-        LOG_DEBUG("flow length: %lu\n", item.size());
-        fprintf(log, "flow length: %lu\n", item.size());
+        std::vector<struct v4_packet_info*>& flow_pkts = flow_item->flow_pkt_list;
+        LOG_DEBUG("flow length: %lu\n", flow_pkts.size());
+        fprintf(log, "flow length: %lu\n", flow_pkts.size());
         // filter short flow
-        if (item.size() < min_flow_len_threshold) {
+        if (flow_pkts.size() < min_flow_len_threshold) {
             LOG_DEBUG("short flow\n");
             fprintf(log, "short flow\n");
             continue;
         }
         // splite time window in a flow
-        transfer_to_feature(item, feature_list);
+        transfer_to_feature(flow_pkts, feature_list);
+        // feature_list.size() represents the number of time windows in a flow.
+        // We need to constuct the same number of result_item to store inferenced result from AI model.
         while (result_list.size() < feature_list.size()) {
             result_item.flow_key_hash = it->first;
             result_list.push_back(result_item);
@@ -557,6 +558,8 @@ void calculate_flow_features(std::vector<pktFeaturePtr>& feature_list, std::vect
     pthread_mutex_unlock(&v4_flow_table_lock);
     // Print feature_list for debug
     for (auto it = feature_list.begin(); it != feature_list.end(); ++it) {
+        // time_win is a 2-dim array pointer.
+        // The last dim is 11, which is equal to the number of features.
         pktFeaturePtr time_win = *it;
         fprintf(log, "window start\n");
         LOG_DEBUG_2("window start\n");
@@ -575,7 +578,7 @@ void calculate_flow_features(std::vector<pktFeaturePtr>& feature_list, std::vect
     return;
 }
 
-void flow_table_inference(volatile bool* force_quit) {
+void flow_table_inference(volatile bool* force_quit, l2capfwd_report* report_ptr) {
     LOG_DEBUG_3("In flow table inference\n");
     int nfds = poll(pfds, 2, 200);
     ssize_t read_bytes = 0;
@@ -593,11 +596,11 @@ void flow_table_inference(volatile bool* force_quit) {
         LOG_DEBUG_3("pipe is readable.\n");
         read_bytes = read(reader_fd, &(msg_desc.row), sizeof(uint64_t));
         read_bytes = read(reader_fd, &(msg_desc.col), sizeof(uint64_t));
-        LOG_DEBUG_3("msg_desc: %lu %lu\n", msg_desc.row, msg_desc.col);
+        LOG_DEBUG("msg_desc: %lu %lu\n", msg_desc.row, msg_desc.col);
 
         // It is a one dimensional array, like {1.0, 1.0, 0.0, 0.0, 1.0, 0.0, ...}
         expected_data_length = msg_desc.row * msg_desc.col * sizeof(double);
-        LOG_DEBUG_3("expected array size: %ld\n", expected_data_length);
+        LOG_DEBUG("expected array size: %ld\n", expected_data_length);
         buffer = (char*)malloc(expected_data_length);
         if (buffer == NULL) {
             LOG_ERROR("pipe receive buffer allocation failure.");
@@ -615,7 +618,7 @@ void flow_table_inference(volatile bool* force_quit) {
             }
             left_bytes -= read_bytes;
             buf_offset += read_bytes;
-            LOG_DEBUG_3("read %ld bytes from pipe. %ld bytes left to read. buf offset: %ld \n", read_bytes, expected_data_length, buf_offset);
+            LOG_DEBUG("read %ld bytes from pipe. %ld bytes left to read. buf offset: %ld \n", read_bytes, left_bytes, buf_offset);
         }
         if (*force_quit) return;
 
@@ -623,28 +626,28 @@ void flow_table_inference(volatile bool* force_quit) {
         unpack_double_type_array(buffer, expected_data_length, infer_result_arr);
         free(buffer);
         buffer = NULL;
-        // Corelate inference result, and vote to update flow_flag
+        // Check inference result. Update result_list from infer_result_arr
         size_t r_l_length = result_list.size();
         if (r_l_length != infer_result_arr.size()) {
             LOG_ERROR("Inference result get error: array length doesn't match! result_list size: %lu\n", r_l_length);
             return;
         }
-        
         if (r_l_length == 0) {
             LOG_ERROR("Inference result get error: array length is 0!\n");
             return;
         }
-        
         for (int i = 0; i < r_l_length; ++i) {
             result_list[i].infer_result = infer_result_arr[i];
         }
-        // Update flow_flag, need to vote
+        // Update v4_flow_table, need to vote
         int ddos_cnt = 0;
         int total_cnt = 0;
         uint64_t key_tmp = result_list[0].flow_key_hash;
         for (int i = 0; i < r_l_length; ++i) {
             if (key_tmp != result_list[i].flow_key_hash) {
-                flow_flag[key_tmp] = (total_cnt - ddos_cnt > ddos_cnt) ? 2 : 1;
+                pthread_mutex_lock(&v4_flow_table_lock);
+                v4_flow_table[key_tmp]->flow_label = (total_cnt - ddos_cnt > ddos_cnt) ? 2 : 1;
+                pthread_mutex_unlock(&v4_flow_table_lock);
                 ddos_cnt = 0;
                 total_cnt = 0;
                 key_tmp = result_list[i].flow_key_hash;
@@ -653,12 +656,23 @@ void flow_table_inference(volatile bool* force_quit) {
                 ++ddos_cnt;
             ++total_cnt;
         }
-        flow_flag[key_tmp] = (total_cnt - ddos_cnt > ddos_cnt) ? 2 : 1;
-        // Update ddos_ip_list
-        for (auto flow_flag_it = flow_flag.begin(); flow_flag_it != flow_flag.end(); ++flow_flag_it) {
-            pthread_mutex_lock(&v4_flow_table_lock);
+        pthread_mutex_lock(&v4_flow_table_lock);
+        v4_flow_table[key_tmp]->flow_label = (total_cnt - ddos_cnt > ddos_cnt) ? 2 : 1;
+        pthread_mutex_unlock(&v4_flow_table_lock);
+
+        // Update ddos_ip_cnt_list and clean attack flow in flow table to save memory.
+        std::vector<uint64_t> clean_ip_set;
+        pthread_mutex_lock(&v4_flow_table_lock);
+        for (auto it = v4_flow_table.begin(); it != v4_flow_table.end(); ++it) {
             // Get five-tuple of flow
-            union v4_flow_key *flw_key = &(v4_flow_table[flow_flag_it->first][0]->flow_key);
+            union v4_flow_key *flw_key = &(it->second->flow_pkt_list[0]->flow_key);
+
+            // Get inferenced result of this flow. If ddos flow, update ddos_list
+            int tmp = it->second->flow_label;
+            int ddos_inc = 0;
+            if (tmp == 1)
+                ddos_inc = 1;
+            // Match ddos_ip_cnt_list
             uint64_t ip_pair_fwd = flw_key->ip_src;
             ip_pair_fwd <<= 32;
             ip_pair_fwd |= flw_key->ip_dst;
@@ -666,30 +680,84 @@ void flow_table_inference(volatile bool* force_quit) {
             ip_pair_bwd <<= 32;
             ip_pair_bwd |= flw_key->ip_src;
             std::unordered_map<uint64_t, int>::iterator ddos_ip_list_it;
-            int tmp = flow_flag_it->second == 1 ? 1 : 0;
             pthread_mutex_lock(&ddos_ip_list_lock);
-            if ((ddos_ip_list_it = ddos_ip_list.find(ip_pair_fwd)) != ddos_ip_list.end()) {
-                if (ddos_ip_list_it->second < attack_threshold)
-                    ddos_ip_list_it->second += tmp;
-            } else if ((ddos_ip_list_it = ddos_ip_list.find(ip_pair_bwd)) != ddos_ip_list.end()) {
-                if (ddos_ip_list_it->second < attack_threshold)
-                    ddos_ip_list_it->second += tmp;
-            } else {
-                ddos_ip_list.insert(std::pair<uint64_t, int>(ip_pair_fwd, tmp));
+            ddos_ip_list_it = ddos_ip_cnt_list.find(ip_pair_fwd);
+            if (ddos_ip_list_it == ddos_ip_cnt_list.end())
+                ddos_ip_list_it = ddos_ip_cnt_list.find(ip_pair_bwd);
+
+            if (ddos_ip_list_it == ddos_ip_cnt_list.end()) {
+                ddos_ip_cnt_list.insert(std::pair<uint64_t, int>(ip_pair_fwd, ddos_inc));
+            }
+            else {
+                if (ddos_ip_list_it->second < attack_threshold && ddos_inc == 1)
+                    ++ddos_ip_list_it->second;
+                else if (ddos_ip_list_it->second >= attack_threshold)
+                    clean_ip_set.push_back(ip_pair_fwd);
             }
             pthread_mutex_unlock(&ddos_ip_list_lock);
-            
+        }
+        pthread_mutex_unlock(&v4_flow_table_lock);
+
+        pthread_mutex_lock(&ddos_ip_list_lock);
+        // ddos_ip_cnt_list output
+        if (report_ptr != NULL) {
+            report_ptr->ip_info_list.clear();
+        }
+        for (auto ip_item = ddos_ip_cnt_list.begin(); ip_item != ddos_ip_cnt_list.end(); ++ip_item) {
             char src_ip[16] = { 0 };
             char dst_ip[16] = { 0 };
-            inet_ntop(AF_INET, (void*)(&flw_key->ip_src), src_ip, sizeof(src_ip));
-            inet_ntop(AF_INET, (void*)(&flw_key->ip_dst), dst_ip, sizeof(dst_ip));
-            LOG_DEBUG_3("(%s:%d->%s:%d, %d) => %d\n", src_ip, ntohs(flw_key->port_src), 
-                dst_ip, ntohs(flw_key->port_dst), flw_key->proto, flow_flag_it->second);
-            pthread_mutex_unlock(&v4_flow_table_lock);
+            uint32_t low_ip = (uint32_t)(ip_item->first & 0xFFFFFFFF);
+            uint32_t high_ip = (uint32_t)(ip_item->first >> 32);
+            inet_ntop(AF_INET, (void*)(&low_ip), src_ip, sizeof(src_ip));
+            inet_ntop(AF_INET, (void*)(&high_ip), dst_ip, sizeof(dst_ip));
+            LOG_DEBUG_3("(%s<->%s) attack count: %d\n", src_ip, dst_ip, ip_item->second);
+            if (report_ptr != NULL) {
+                std::string tmp_str(src_ip);
+                tmp_str.append(" --- ");
+                tmp_str.append(dst_ip);
+                tmp_str.append(" : " + std::to_string(ip_item->second));
+                report_ptr->ip_info_list.push_back(tmp_str);
+            }
         }
+        
+        pthread_mutex_unlock(&ddos_ip_list_lock);
+        
+        // Travel through flow table again to find elements that need to be removed.
+        std::vector<uint64_t> clean_key_set;
+        pthread_mutex_lock(&v4_flow_table_lock);
+        for (auto it = v4_flow_table.begin(); it != v4_flow_table.end(); ++it) {
+            // Get five-tuple of flow
+            union v4_flow_key *flw_key = &(it->second->flow_pkt_list[0]->flow_key);
+            // Match clean_ip_set
+            uint64_t ip_pair_fwd = flw_key->ip_src;
+            ip_pair_fwd <<= 32;
+            ip_pair_fwd |= flw_key->ip_dst;
+            uint64_t ip_pair_bwd = flw_key->ip_dst;
+            ip_pair_bwd <<= 32;
+            ip_pair_bwd |= flw_key->ip_src;
+            auto ret_it = std::find(clean_ip_set.begin(), clean_ip_set.end(), ip_pair_fwd);
+            auto ret_it_bwd = std::find(clean_ip_set.begin(), clean_ip_set.end(), ip_pair_bwd);
+            // This flow is not found, pass
+            if (ret_it == clean_ip_set.end() && ret_it_bwd == clean_ip_set.end())
+                continue;
+            // Otherwise, tag to clean
+            clean_key_set.push_back(it->first);
+        }
+        pthread_mutex_unlock(&v4_flow_table_lock);
+        pthread_mutex_lock(&v4_flow_table_lock);
+        LOG_DEBUG_3("v4_flow_table size: %lu (before cleaning)", v4_flow_table.size());
+        for (auto f_key : clean_key_set) {
+            delete v4_flow_table[f_key];
+            v4_flow_table.erase(f_key);
+        }
+        LOG_DEBUG_3("v4_flow_table size: %lu (after cleaning)", v4_flow_table.size());
+        pthread_mutex_unlock(&v4_flow_table_lock);
+        clean_key_set.clear();
+        clean_ip_set.clear();
 
-        // Clean
+        // Mark that a response has been received.
         have_response = true;
+        // Clean unused variable
         result_list.clear();
     }
 
@@ -705,7 +773,7 @@ void flow_table_inference(volatile bool* force_quit) {
         // Calculate the packets amount = time window count * packets per window
         msg_desc.row = feature_list.size() * win_max_pkt;
         msg_desc.col = 11;
-        LOG_DEBUG_3("msg_desc: row=%lu, col=%lu\n", msg_desc.row, msg_desc.col);
+        LOG_DEBUG("msg_desc: row=%lu, col=%lu\n", msg_desc.row, msg_desc.col);
         char* buf = pack_double_type_array(msg_desc, win_max_pkt, feature_list);
         for (auto it = feature_list.begin(); it != feature_list.end(); ++it) {
             free(*it);
@@ -716,10 +784,10 @@ void flow_table_inference(volatile bool* force_quit) {
             return;
         ssize_t writen_bytes = 0;
         writen_bytes = write(writer_fd, &msg_desc, sizeof(msg_desc));
-        LOG_DEBUG_3("%ld bytes to write.\n", writen_bytes);
-        LOG_DEBUG_3("%lu bytes need to be writen\n", msg_desc.row * msg_desc.col * sizeof(double));
+        LOG_DEBUG("%ld bytes to write.\n", writen_bytes);
+        LOG_DEBUG("%lu bytes need to be writen\n", msg_desc.row * msg_desc.col * sizeof(double));
         writen_bytes = write(writer_fd, buf, msg_desc.row * msg_desc.col * sizeof(double));
-        LOG_DEBUG_3("%lu bytes to write.\n", writen_bytes);
+        LOG_DEBUG("%lu bytes to write.\n", writen_bytes);
         free(buf);
         buf = NULL;
         have_response = false;
@@ -733,12 +801,12 @@ void insert_v4_flow_table(struct v4_packet_info* v4_pkt) {
     LOG_DEBUG("flow hash key: %lu\n", flow_hash_key);
     auto it = v4_flow_table.find(flow_hash_key);
     if (it != v4_flow_table.end()) {
-        it->second.push_back(v4_pkt);
+        it->second->flow_pkt_list.push_back(v4_pkt);
     } else {
+        v4_flow_info* ptr = new v4_flow_info();
+        if (ptr == NULL) return;
         v4_flow_table.insert(
-            std::pair<uint64_t, std::vector<struct v4_packet_info*>>(
-                flow_hash_key, std::vector<struct v4_packet_info*>({v4_pkt})));
-        flow_flag.insert(std::pair<uint64_t, int>(flow_hash_key, 0));
+            std::pair<uint64_t, struct v4_flow_info*>(flow_hash_key, ptr));
     }
 }
 

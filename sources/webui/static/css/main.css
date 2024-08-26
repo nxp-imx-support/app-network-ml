@@ -1,0 +1,46 @@
+.columns {
+    padding: 10px;
+    /* border: 1px solid #ccc; */
+}
+
+.header {
+    width: auto;
+    height: 100px;
+}
+
+#nxp-logo {
+    width: auto;
+    height: 70%;
+}
+
+#ddos-network {
+    border: 1px solid rgb(42, 43, 40);
+    padding: 5px;
+}
+
+#score-table {
+    margin-top: 30px;
+}
+
+.info-font-style{
+    font-size: x-large;
+}
+
+.attack-detection-info {
+    height: 100%;
+    margin: 0 10px;
+    border: 1px solid rgb(42, 43, 40);
+}
+
+#status_row {
+    font-size: x-large;
+}
+
+.title-text {
+    padding: 10px;
+}
+
+.flow-table {
+    height: 300px;
+    overflow: auto;
+}

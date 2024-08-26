@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>DPDK-DDoS-Intercept</title>
+
+        <link rel="stylesheet" type="text/css" href="/static/css/main.css">
+        <link rel="stylesheet" type="text/css" href="/static/css/bootstrap.min.css">
+
+        <script src="/static/js/bootstrap.min.js"></script>
+        <script src="/static/js/jquery-3.7.1.min.js"></script>
+    </head>
+    <body>
+        <div class="container-fluid">
+            <div class="row header">
+                <div class="col-1" style="padding: 10px;">
+                    <img class="img-fluid" id="nxp-logo" alt="nxp-logo" src="data:image/png;base64,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"/>
+                </div>
+                <div class="col-11 title-text">
+                    <h4>DPDK DDoS Intercept</h4>
+                    <p>Demo for DDoS detection and intercept</p>
+                </div>
+            </div>
+            <div class="row" style="height: 550px;">
+                <div class="col-1"></div>
+                <div class="col-6" id="ddos-network">
+                    <img src="/static/images/ddos_demo_network_topology.gif" style="height: 520px;" alt="ddos network" class="img-fluid">
+                </div>
+                <div class="col-4 info-font-style attack-detection-info">
+                    <div style="height: 60%; overflow-y: auto;">
+                        <table id="connections-table" class="table table-striped">
+                            <thead>
+                                <th>Connection</th>
+                                <th>Attack</th>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>192.168.0.44 --- 192.168.0.122</td>
+                                    <td class="text-warning">Yes</td>
+                                </tr>
+                                <tr>
+                                    <td>192.168.0.23 --- 192.168.0.122</td>
+                                    <td class="text-info">No</td>
+                                </tr>
+                                <tr>
+                                    <td>192.168.0.121 --- 192.168.0.122</td>
+                                    <td class="text-info">No</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <table id="score-table" class="table table-borderless table-default">
+                        <thead>
+                            <th class="text-danger">Attack</td>
+                            <th>:</td>
+                            <th class="text-success">Benign</td>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>0</td>
+                                <td></td>
+                                <td>0</td>
+                            </tr>
+                            <tr>
+                                <td>DDoS rate:</td>
+                                <td>0</td>
+                                <td></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="col-1"></div>
+            </div>
+            <div class="row">
+                <div class="col-1"></div>
+                <div class="col-6">
+                    <div class="row info-font-style">
+                        <div class="col-5">
+                            <ul id="dpdk-status">
+                                <li>RX packets: 0</li>
+                                <li>TX packets: 0</li>
+                                <li>Throughput: 0 pps</li>
+                            </ul>
+                        </div>
+                        <div class="col-7">
+                            <ul id="model-status">
+                                <li>Inference speed: 0 pps</li>
+                                <li>NPU: </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-4"></div>
+                <div class="col-1"></div>
+            </div>
+
+        </div>
+    <script src="static/js/home.js"></script>
+    </body>
+</html>

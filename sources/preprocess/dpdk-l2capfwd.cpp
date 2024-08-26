@@ -114,6 +114,9 @@ struct l2fwd_port_statistics {
 } __rte_cache_aligned;
 struct l2fwd_port_statistics port_statistics[RTE_MAX_ETHPORTS];
 
+/* Report for Web UI */
+l2capfwd_report report_log;
+
 #define MAX_TIMER_PERIOD 86400 /* 1 day max */
 /* A tsc-based timer responsible for triggering statistics printout */
 static uint64_t timer_period = 10; /* default period is 10 seconds */
@@ -162,8 +165,23 @@ print_stats(void)
 		   total_packets_rx,
 		   total_packets_dropped);
 	printf("\n====================================================\n");
-
 	fflush(stdout);
+	report_log.previous_packets_rx = report_log.cur_packets_rx;
+	report_log.previous_packets_tx = report_log.cur_packets_tx;
+	report_log.cur_packets_rx = total_packets_rx;
+	report_log.cur_packets_tx = total_packets_tx;	
+
+	// Count DDoS attack
+	if (RTE_MAX_ETHPORTS >= 2) {
+		// port 0 directly receive DDoS
+		if (port_statistics[0].rx > port_statistics[1].rx) {
+			report_log.total_cnt = port_statistics[0].rx;
+			report_log.ddos_cnt = port_statistics[0].rx - port_statistics[1].tx;
+		} else {
+			report_log.total_cnt = port_statistics[1].rx;
+			report_log.ddos_cnt = port_statistics[1].rx - port_statistics[0].tx;
+		}
+	}
 }
 
 // don't need mac update. just extract and forward pkt information.
@@ -342,7 +360,9 @@ l2fwd_main_loop(void)
 					/* do this only on main core */
 					if (lcore_id == rte_get_main_lcore()) {
 						print_stats();
-						flow_table_inference(&force_quit);
+						flow_table_inference(&force_quit, &report_log);
+						// export report log to json file
+						export_report(&report_log);
 						/* reset the timer */
 						timer_tsc = 0;
 					}
@@ -586,6 +606,7 @@ l2fwd_parse_args(int argc, char **argv)
 				return -1;
 			}
 			timer_period = timer_secs;
+			report_log.time_period = timer_period;
 			break;
 
 		/* max_burst_size */

@@ -1,3 +1,5 @@
+#ifndef _EXTRACT_PRO_HDR
+#define _EXTRACT_PRO_HDR
 #include <net/ethernet.h>
 #include <netinet/in.h>
 #include <linux/ipv6.h>
@@ -10,6 +12,7 @@
 #include <rte_tcp.h>
 #include <rte_udp.h>
 #include <rte_icmp.h>
+#include "utils.h"
 
 #define V4_FLOW_KEY_SIZE 2
 #define V6_FLOW_KEY_SIZE 6
@@ -42,6 +45,8 @@ const size_t max_flow_len_threshold = 50;
 const size_t win_max_pkt = 10;
 // Time period (second) in a time window.
 const int win_time_period = 10;
+
+const int sample_upper_size = 5000;
 
 /**  Threshold for attack count. 
  * If the number of attacks on one IP is greater than this value,
@@ -91,6 +96,9 @@ struct v4_packet_info {
     __u32 udp_len;      // UDP Len
     __u8 icmp_type;     // ICMP Type
 };
+
+struct v4_packet_info* alloc_v4_packet_info();
+void free_v4_packet_info(struct v4_packet_info* ptr);
 
 // Ordered by features list in v4_packet_info
 const uint32_t feature_value_range[][2] = {{0, 10}, 
@@ -155,6 +163,25 @@ struct inferenced_flow_result {
     double infer_result;
 };
 
+class v4_flow_info {
+public:
+    std::vector<struct v4_packet_info*> flow_pkt_list;
+    /* Flow label:
+    * 0 == Unknown
+    * 1 == DDoS
+    * 2 == Begin
+    */
+    int flow_label;
+
+    v4_flow_info() : flow_label(0), flow_pkt_list() {}
+    ~v4_flow_info() {
+        for (auto it : flow_pkt_list) {
+            free_v4_packet_info(it);
+        }
+        flow_pkt_list.clear();
+    }
+};
+
 
 // struct packet_list {
 //     std::vector<packet_info> vec;
@@ -171,9 +198,7 @@ struct inferenced_flow_result {
 void main_lcore_handle_init();
 void main_lcore_handle_cleanup();
 
-struct v4_packet_info* alloc_v4_packet_info();
 
-void free_v4_packet_info(struct v4_packet_info* ptr);
 
 /**
  * Handle network protocol stack, extract packet information and 5-tuple. Match the packet
@@ -188,7 +213,7 @@ void handle_protocol_stack(struct rte_mbuf *pkt, int *is_ddos);
 /**
  * Startup a new thread. Preprocess flow table and send it to AI inference process via pipe
 */
-void flow_table_inference(volatile bool* force_quit);
+void flow_table_inference(volatile bool* force_quit, l2capfwd_report* report_ptr);
 
 /**
  * Clean up v4 flow table
@@ -202,3 +227,4 @@ void v6_flow_table_cleanup();
 
 void print_v4_flow_table();
 void insert_v4_flow_table(struct v4_packet_info* v4_pkt);
+#endif

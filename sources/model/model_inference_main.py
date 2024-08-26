@@ -6,6 +6,7 @@ import select
 import argparse
 import numpy as np
 import tflite_runtime.interpreter as tflite
+import json
 
 class ArrayDesc(object):
     def __init__(self) -> None:
@@ -28,6 +29,9 @@ LOG_LEVEL_ERROR = 0x04
 
 G_LOG_LEVEL = (LOG_LEVEL_DEBUG | LOG_LEVEL_INFO | LOG_LEVEL_ERROR)
 
+report_log = dict()
+MODEL_INFERENCE_REPORT_PATH = "./model_infer_report.json"
+
 def log_print(log_level, log_message):
     if log_level & G_LOG_LEVEL:
         print(log_message)
@@ -48,7 +52,7 @@ def log_info(log_message):
 def signal_handler(signum, frame):
     global quit_flag
     if signum == signal.SIGINT or signum == signal.SIGTERM or signum == signal.SIGPIPE:
-        log_info("handle exit signal... bye.")
+        log_info("signal {} recv. handle exit signal... bye.".format(signum))
         quit_flag = True
 
 def unpack_double_type_array(array_desc, buf):
@@ -71,9 +75,10 @@ def pack_double_type_array(array_desc, arr):
 
 def model_predict(args, x_data):
     global inference_no
-    log_file = open("./inference-{}.txt".format(inference_no), "w")
+    global report_log
+    # log_file = open("./inference-{}.txt".format(inference_no), "w")
     inference_no += 1
-    log_file.write("x_data: \n{}\n".format(x_data))
+    # log_file.write("x_data: \n{}\n".format(x_data))
 
     if args.model is not None:
         model_path = args.model
@@ -85,6 +90,7 @@ def model_predict(args, x_data):
     if args.ext_delegate is not None:
         log_info("Loading external delegate from {} with options: {}".format(args.ext_delegate, args.ext_opt))
         ext_dele = [tflite.load_delegate(args.ext_delegate, args.ext_opt)]
+        report_log["npu_used"] = 1
     model = tflite.Interpreter(model_path=model_path, experimental_delegates=ext_dele)
     model.allocate_tensors()
 
@@ -92,28 +98,16 @@ def model_predict(args, x_data):
     output_desc = model.get_output_details()[0]
     input_scale, input_zero_point = input_desc['quantization']
 
-    log_file.write("input_desc_type: {}, input_scale: {}, input_zero_point: {}\n".format(
-        input_desc['dtype'], input_scale, input_zero_point
-    ))
+    # log_file.write("input_desc_type: {}, input_scale: {}, input_zero_point: {}\n".format(
+    #     input_desc['dtype'], input_scale, input_zero_point
+    # ))
 
     # format the input shape
     x_data = np.array(x_data)
     log_debug("x_data shape: {}".format(x_data.shape))
-    log_file.write("x_data shape: {}\n".format(x_data.shape))
+    # log_file.write("x_data shape: {}\n".format(x_data.shape))
     x_data = x_data.reshape((-1, TIME_WIN_SIZE, 11, 1))
-    
-    # warming up the model (necessary for the GPU)
-    # cnt = 0
-    # for vec in x_data:
-    #     if cnt > 10 or cnt >= sample_len:
-    #         break
-    #     input_data = vec / input_scale + input_zero_point
-    #     input_data = np.expand_dims(input_data, axis=0).astype(input_desc["dtype"])
-    #     model.set_tensor(input_desc['index'], input_data)
-    #     model.invoke()
-    #     tmp = np.squeeze(model.get_tensor(output_desc['index']))
-    #     tmp = input_scale * (tmp - input_zero_point)
-    #     cnt += 1
+    report_log["infer_samples"] = x_data.shape[0]
 
     # Start inference
     Y_pred = list()
@@ -131,12 +125,13 @@ def model_predict(args, x_data):
         avg_time += delta
     Y_pred = np.array(Y_pred)
 
-    log_file.close()
+    # log_file.close()
     return Y_pred
 
 
 def main():
     global quit_flag
+    global report_log
     parser = argparse.ArgumentParser(
         description='DDoS attacks detection with convolutional neural networks',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -206,7 +201,12 @@ def main():
                     x_data = unpack_double_type_array(array_desc, buf)
                     # print(x_data)
                     log_debug("Start model prediction.")
+                    model_ts1 = time.time()
                     response_array = model_predict(model_args, x_data)
+                    model_ts2 = time.time()
+                    report_log["infer_time"] = model_ts2 - model_ts1
+                    with open(MODEL_INFERENCE_REPORT_PATH, "w") as fd:
+                        fd.write(json.dumps(report_log))
                     log_debug("Finish model prediction.")
                     if response_array is None:
                         quit_flag = True

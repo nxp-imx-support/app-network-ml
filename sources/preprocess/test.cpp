@@ -83,7 +83,7 @@ void test_flow_table_inference() {
     
     print_v4_flow_table();
     bool quit_flag = false;
-    flow_table_inference(&quit_flag);
+    flow_table_inference(&quit_flag, NULL);
     v4_flow_table_cleanup();
     return;
 }
@@ -109,7 +109,7 @@ void test_pipe_communication() {
         diff_ts = cur_ts - pre_ts;
         if (diff_ts > time_period) {
             pre_ts = cur_ts;
-            flow_table_inference(&quit_flag);
+            flow_table_inference(&quit_flag, NULL);
         }
     }
     LOG_INFO("Clean up...\n");

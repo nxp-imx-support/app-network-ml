@@ -66,3 +66,28 @@ int unpack_double_type_array(char* buf, ssize_t buf_length, std::vector<double>&
     // }
     return 0;
 }
+
+/**
+ * Export report log to json file
+ */
+void export_report(l2capfwd_report* report_ptr) {
+    nlohmann::json json_log;
+    json_log["cur_packets_rx"] = report_ptr->cur_packets_rx;
+    json_log["cur_packets_tx"] = report_ptr->cur_packets_tx;
+    json_log["previous_packets_rx"] = report_ptr->previous_packets_rx;
+    json_log["previous_packets_tx"] = report_ptr->previous_packets_tx;
+    json_log["ddos_cnt"] = report_ptr->ddos_cnt;
+    json_log["total_cnt"] = report_ptr->total_cnt;
+    json_log["time_period"] = report_ptr->time_period;
+    json_log["ip_info_list"] = nlohmann::json::array();
+    for (auto it : report_ptr->ip_info_list) {
+        json_log["ip_info_list"].push_back(it);
+    }
+    std::ofstream o_file(L2CAPFWD_REPORT_PATH);
+    if (!o_file) {
+        LOG_ERROR("Open l2capfwd report file failed!");
+        return;
+    }
+    o_file << json_log << std::endl;
+    o_file.close();
+}
