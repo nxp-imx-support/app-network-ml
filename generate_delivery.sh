@@ -1,6 +1,9 @@
 #!/bin/bash
+PLATFORM=i.MX93
+echo "Target platform is $PLATFORM"
 
-DST_DIR=/home/nxg01813/Board_bak/i.MX95/dpdk-ddos-intercept
+# Modify this path if you need
+DST_DIR=~/Board_bak/$PLATFORM/dpdk-ddos-intercept
 echo "Dest path:$DST_DIR"
 
 if [ ! -d $DST_DIR ]; then
@@ -23,6 +26,5 @@ cp sources/build/l2capfwd $DST_DIR
 cp sources/model/model_inference_main.py $DST_DIR/model
 cp -r sources/webui/* $DST_DIR/webui/
 cp output/LUCID-ddos-CIC2019-quant-int8.tflite $DST_DIR/model
-cp run_demo.sh $DST_DIR
-cp run_demo_imx95.sh $DST_DIR
+cp run_demo.py $DST_DIR
 echo "Finish."

@@ -59,22 +59,20 @@ function update_display(msg) {
     });
 
     // Update score table
-    if (msg["ddos_cnt"] > 0) {
-        var score_table = $("#score-table tbody");
-        score_table.empty();
-        var tr1 = $("<tr></tr>");
-        tr1.append("<td>" + msg["ddos_cnt"] + "</td>");
-        tr1.append("<td></td>");
-        tr1.append("<td>" + msg["benign_cnt"] + "</td>");
-        score_table.append(tr1);
+    var score_table = $("#score-table tbody");
+    score_table.empty();
+    var tr1 = $("<tr></tr>");
+    tr1.append("<td>" + msg["ddos_cnt"] + "</td>");
+    tr1.append("<td></td>");
+    tr1.append("<td>" + msg["benign_cnt"] + "</td>");
+    score_table.append(tr1);
 
-        var tr2 = $("<tr></tr>");
-        tr2.append("<td>DDoS rate:</td>");
-        var rate = 0;
-        rate = Math.floor(msg["ddos_cnt"] / msg["total_cnt"] * 100);
-        tr2.append("<td>" + rate + "%</td>");
-        score_table.append(tr2);
-    }
+    var tr2 = $("<tr></tr>");
+    tr2.append("<td>DDoS rate:</td>");
+    var rate = 0;
+    rate = Math.floor(msg["ddos_cnt"] / msg["total_cnt"] * 100);
+    tr2.append("<td>" + rate + "%</td>");
+    score_table.append(tr2);
     
 }
 

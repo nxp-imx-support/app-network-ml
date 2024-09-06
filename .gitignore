@@ -2,6 +2,7 @@ output/*
 sample-dataset/*
 **/build
 **/tmp_log.txt
+memo.txt
 
 # !output/.gitkeep
 # !sample-dataset/.gitkeep
