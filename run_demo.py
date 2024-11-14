@@ -140,12 +140,15 @@ def execute_demo_loop(hostname):
     if not os.access(L2CAPFWD_APP, os.X_OK):
         os.chmod(L2CAPFWD_APP, 0o770)
     print("Start l2capfwd process")
-    args = "-c 0x3 -n 2 --vdev 'net_enetqos' --vdev 'net_enetfec' -- -p 0x3 -P -T 5 --no-mac-updating > ./debug.log 2>&1"
+    if hostname == "imx93evk":
+        args = "-c 0x3 -n 2 --vdev 'net_enetqos' --vdev 'net_enetfec' -- -p 0x3 -P -T 5 --no-mac-updating > ./debug.log 2>&1"
+    else:
+        args = "-c 0x3 -n 2 -- -p 0x3 -P -T 5 --no-mac-updating > ./debug.log 2>&1"
     cmd_str = "{} {}".format(L2CAPFWD_APP, args)
     l2capfwd_process = subprocess.Popen(cmd_str, shell=True)
     print("l2capfwd pid: {}".format(l2capfwd_process.pid))
 
-    # Start up AI model
+    # Start up model inference
     os.chdir(MODEL_APP_DIR)
     print("Start AI inference process")
     cmd_str = ""

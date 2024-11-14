@@ -19,6 +19,7 @@ quit_flag = False
 UINT64_SIZE = 8
 DOUBLE_SIZE = 8
 TIME_WIN_SIZE = 10
+BATCH_SIZE = 128
 # 1 second
 time_period = 1
 inference_no = 1
@@ -91,16 +92,6 @@ def model_predict(args, x_data):
         log_info("Loading external delegate from {} with options: {}".format(args.ext_delegate, args.ext_opt))
         ext_dele = [tflite.load_delegate(args.ext_delegate, args.ext_opt)]
         report_log["npu_used"] = 1
-    model = tflite.Interpreter(model_path=model_path, experimental_delegates=ext_dele)
-    model.allocate_tensors()
-
-    input_desc = model.get_input_details()[0]
-    output_desc = model.get_output_details()[0]
-    input_scale, input_zero_point = input_desc['quantization']
-
-    # log_file.write("input_desc_type: {}, input_scale: {}, input_zero_point: {}\n".format(
-    #     input_desc['dtype'], input_scale, input_zero_point
-    # ))
 
     # format the input shape
     x_data = np.array(x_data)
@@ -108,23 +99,54 @@ def model_predict(args, x_data):
     # log_file.write("x_data shape: {}\n".format(x_data.shape))
     x_data = x_data.reshape((-1, TIME_WIN_SIZE, 11, 1))
     report_log["infer_samples"] = x_data.shape[0]
+    log_info("Samples number: {}".format(x_data.shape[0]))
+    model = tflite.Interpreter(model_path=model_path, experimental_delegates=ext_dele)
+    input_desc = model.get_input_details()[0]
+    output_desc = model.get_output_details()[0]
+    if BATCH_SIZE > 1:
+        model.resize_tensor_input(input_desc['index'], [BATCH_SIZE, x_data.shape[1], x_data.shape[2], x_data.shape[3]])
+    model.allocate_tensors()
 
-    # Start inference
-    Y_pred = list()
-    avg_time = 0
-    delta = 0
+    # log_file.write("input_desc_type: {}, input_scale: {}, input_zero_point: {}\n".format(
+    #     input_desc['dtype'], input_scale, input_zero_point
+    # ))
+
     
-    for vec in x_data:
-        input_data = np.expand_dims(vec, axis=0).astype(input_desc["dtype"])
-        model.set_tensor(input_desc['index'], input_data)
-        pt0 = time.time()
-        model.invoke()
-        delta = time.time() - pt0
-        tmp = np.squeeze(model.get_tensor(output_desc['index']))
-        Y_pred.append(1.0 if tmp != 0 else 0.0)
-        avg_time += delta
-    Y_pred = np.array(Y_pred)
+    # Start inference    
+    # Batch input
+    if BATCH_SIZE > 1:
+        Y_pred = list()
+        batch_offset = 0
+        batchs = int(x_data.shape[0] / BATCH_SIZE)
+        left = x_data.shape[0] % BATCH_SIZE
+        if left > 0:
+            batchs += 1
+            padding_num = BATCH_SIZE - left
+        padding_vector = np.zeros((padding_num, x_data.shape[1], x_data.shape[2], x_data.shape[3]))
+        x_data = np.concatenate((x_data, padding_vector), axis=0)
+        for b in range(batchs):
+            input_data = x_data[batch_offset:batch_offset+BATCH_SIZE].astype(input_desc["dtype"])
+            batch_offset += BATCH_SIZE
+            model.set_tensor(input_desc['index'], input_data)
+            model.invoke()
+            out_list = model.get_tensor(output_desc['index'])
+            log_debug("out_list shape: {}".format(out_list.shape))
+            for tmp in out_list:
+                if tmp != 0:
+                    Y_pred.append(1.0)
+                else:
+                    Y_pred.append(0.0)
+        Y_pred = Y_pred[:-padding_num]
+    # Single input
+    else:
+        for vec in x_data:
+            input_data = np.expand_dims(vec, axis=0).astype(input_desc["dtype"])
+            model.set_tensor(input_desc['index'], input_data)
+            model.invoke()
+            tmp = np.squeeze(model.get_tensor(output_desc['index']))
+            Y_pred.append(1.0 if tmp != 0 else 0.0)
 
+    Y_pred = np.array(Y_pred)
     # log_file.close()
     return Y_pred
 
@@ -160,7 +182,7 @@ def main():
     array_desc = ArrayDesc()
     response_array = list()
 
-    # Caution! Two open function call order must be this!
+    # Caution! The order of following two function calls must be like this!
     writer_fd = os.open(pipe_writer, os.O_WRONLY)
     reader_fd = os.open(pipe_reader, os.O_RDONLY)
     log_debug("writer_fd: {}, reader_fd: {}".format(writer_fd, reader_fd))
@@ -184,6 +206,7 @@ def main():
                 # log_debug("event come, fd: {}, flag: {}".format(fd, flag))
                 if ready_response == False and fd == reader_fd and flag & select.POLLIN:
                     log_debug("Read from pipe...")
+                    tot_time = time.time()
                     buf = os.read(fd, UINT64_SIZE * 2)
                     array_desc.row, array_desc.col = struct.unpack("QQ", buf)
                     log_debug("expected {} bytes to be read: row={}, col={}".format(array_desc.row * array_desc.col * DOUBLE_SIZE, array_desc.row, array_desc.col))
@@ -205,9 +228,12 @@ def main():
                     response_array = model_predict(model_args, x_data)
                     model_ts2 = time.time()
                     report_log["infer_time"] = model_ts2 - model_ts1
+                    log_info("Inference time: {}s".format(report_log["infer_time"]))
                     with open(MODEL_INFERENCE_REPORT_PATH, "w") as fd:
                         fd.write(json.dumps(report_log))
                     log_debug("Finish model prediction.")
+                    tot_time = time.time() - tot_time
+                    log_info("Handle time: {}s".format(tot_time))
                     if response_array is None:
                         quit_flag = True
                         break

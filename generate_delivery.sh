@@ -1,9 +1,9 @@
 #!/bin/bash
-PLATFORM=i.MX93
+PLATFORM=i.MX95
 echo "Target platform is $PLATFORM"
 
 # Modify this path if you need
-DST_DIR=~/Board_bak/$PLATFORM/dpdk-ddos-intercept
+DST_DIR=~/Board_bak/$PLATFORM/imx-ddb
 echo "Dest path:$DST_DIR"
 
 if [ ! -d $DST_DIR ]; then

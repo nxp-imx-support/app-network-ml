@@ -184,7 +184,7 @@ print_stats(void)
 	}
 }
 
-// don't need mac update. just extract and forward pkt information.
+// This function will not be called. Don't need mac update. just forward pkts.
 static void
 l2fwd_mac_updating(struct rte_mbuf *m, unsigned dest_portid)
 {
