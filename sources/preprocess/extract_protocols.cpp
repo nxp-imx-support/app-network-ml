@@ -253,6 +253,8 @@ void handle_protocol_stack(struct rte_mbuf *pkt, int *is_ddos) {
         pro_ptr = (uint8_t*)ipv4_hdr + offsetof(struct rte_ipv4_hdr, time_to_live);
         memcpy(&(v4_pkt->flow_key), pro_ptr, sizeof(union v4_flow_key));
 
+        // Add IP filter code.
+
         // quick judge ddos
         uint64_t ddos_check_key_fwd = v4_pkt->flow_key.ip_src;
         ddos_check_key_fwd <<= 32;

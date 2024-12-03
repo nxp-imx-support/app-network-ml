@@ -1,0 +1,6 @@
+{
+    "report_json_path": "./l2capfwd_report.json",
+    "log_level": "debug_0",
+    "share_mem_key": "0x3355",
+    "white_ip_list": ["192.168.0.157"]
+}

@@ -42,6 +42,7 @@ build/$(APP)-shared: $(SRCS-y) Makefile $(PC_FILE) | build
 
 build/$(APP): $(SRCS-y) Makefile $(PC_FILE) $(SRC-h) | build
 	$(CC) $(CFLAGS) $(SRCS-y) -o $@ $(LDFLAGS) $(LDFLAGS_STATIC)
+	cp ./preprocess/config.json ./build/
 
 build/test: $(SRCS-test) Makefile $(SRC-h) | build
 	$(CC) $(CFLAGS) $(SRCS-test) -o $@ $(LDFLAGS) $(LDFLAGS_STATIC)

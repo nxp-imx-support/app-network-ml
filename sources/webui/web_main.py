@@ -6,7 +6,7 @@ SER_HOST = "0.0.0.0"
 SER_PORT = 5000
 L2FWDCAP_REPORT = "../l2capfwd_report.json"
 INFERENCE_REPORT = "../model/model_infer_report.json"
-WHITELIST = ["192.168.0.154", "255.255.255.255", "0.0.0.0"]
+WHITELIST = ["192.168.0.157", "255.255.255.255", "0.0.0.0"]
 
 app = Flask(__name__)
 

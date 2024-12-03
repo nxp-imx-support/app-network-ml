@@ -5,6 +5,7 @@
 #include <sys/types.h>
 #include <string>
 #include <fstream>
+#include <unordered_set>
 #include "nlohmann/json.hpp"
 
 typedef double(*pktFeaturePtr)[11];
@@ -18,9 +19,6 @@ const int LOG_LEVEL_DEBUG_1 = 4;
 const int LOG_LEVEL_DEBUG_2 = 8;
 const int LOG_LEVEL_DEBUG_3 = 16;
 const int LOG_LEVEL_ERROR = 128;
-
-const int LOG_LEVEL_DEBUG = LOG_LEVEL_DEBUG_3;
-const int G_LOG_LEVEL = (LOG_LEVEL_ERROR | LOG_LEVEL_INFO | LOG_LEVEL_DEBUG);
 
 #define LOG_INFO(fmt, ...) \
     print_log(LOG_LEVEL_INFO, __FILE__, __LINE__, __func__, "INFO", fmt, ##__VA_ARGS__)
@@ -51,7 +49,17 @@ public:
                         ip_info_list(), time_period(0), ddos_cnt(0), total_cnt(0) {}
 };
 
-#define L2CAPFWD_REPORT_PATH "./l2capfwd_report.json"
+#define CONFIGRATION_FILE "./config.json"
+
+class configuration_items {
+public:
+    std::string report_json_path;
+    int share_mem_key;
+    int log_level;
+    std::unordered_set<uint32_t> ip_white_set;
+
+    configuration_items() : share_mem_key(0), log_level(1) {}
+};
 
 // Descript the shape of array.
 struct array_desc {
@@ -67,5 +75,6 @@ char* pack_double_type_array(struct array_desc arr_desc, size_t rows, std::vecto
 
 int unpack_double_type_array(char* buf, ssize_t buf_length, std::vector<double>& arr);
 
-void export_report(l2capfwd_report* report_ptr);
+int parse_configuration(const std::string config_path, configuration_items& cfgs);
+void export_report(const std::string report_json_path, l2capfwd_report* report_ptr);
 #endif

@@ -45,6 +45,8 @@
 
 static volatile bool force_quit;
 
+static configuration_items* global_cfgs = nullptr;
+
 /* MAC updating disabled by default */
 static int mac_updating = 0;
 
@@ -362,7 +364,7 @@ l2fwd_main_loop(void)
 						print_stats();
 						flow_table_inference(&force_quit, &report_log);
 						// export report log to json file
-						export_report(&report_log);
+						export_report(global_cfgs->report_json_path, &report_log);
 						/* reset the timer */
 						timer_tsc = 0;
 					}
@@ -765,7 +767,7 @@ signal_handler(int signum)
 }
 
 int
-dpdk_l2capfwd_main(int argc, char **argv)
+dpdk_l2capfwd_main(int argc, char **argv, configuration_items& cfgs)
 {
 	struct lcore_queue_conf *qconf;
 	int ret;
@@ -776,6 +778,9 @@ dpdk_l2capfwd_main(int argc, char **argv)
 	unsigned nb_ports_in_mask = 0;
 	unsigned int nb_lcores = 0;
 	unsigned int nb_mbufs;
+
+	global_cfgs = &cfgs;
+	if (global_cfgs == nullptr) return -1;
 
 	/* Init EAL. 8< */
 	ret = rte_eal_init(argc, argv);
