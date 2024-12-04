@@ -1,6 +1,6 @@
 .vscode/
 output/*
-sample-dataset/*
+# sample-dataset/*
 **/build
 **/tmp_log.txt
 memo.txt

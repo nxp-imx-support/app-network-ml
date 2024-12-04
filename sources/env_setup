@@ -1,4 +1,4 @@
-export DPDK_PKG_PATH=/home/nxg01813/Software/SDK/dpdk-sdk/lib/pkgconfig
+export DPDK_PKG_PATH=~/Software/SDK/dpdk-sdk/lib/pkgconfig
 export PKG_CONFIG_PATH=$DPDK_PKG_PATH:$PKG_CONFIG_PATH
 
 export CC=aarch64-linux-gnu-g++
