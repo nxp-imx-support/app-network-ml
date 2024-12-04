@@ -1,3 +1,4 @@
+.vscode/
 output/*
 sample-dataset/*
 **/build

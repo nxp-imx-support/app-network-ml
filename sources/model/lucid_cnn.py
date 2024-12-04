@@ -22,10 +22,13 @@ import tensorflow as tf
 import numpy as np
 import random as rn
 import os
+import sys
 import csv
 import pprint
+import time
+import argparse
 from util_functions import *
-from lucid_dataset_parser import *
+# from lucid_dataset_parser import *
 # Seed Random Numbers
 os.environ['PYTHONHASHSEED']=str(SEED)
 np.random.seed(SEED)

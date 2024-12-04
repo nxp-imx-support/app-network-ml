@@ -1,0 +1,5 @@
+dpkt==1.9.8
+numpy==1.26.4
+scikit-learn
+h5py
+tensorflow==2.7.1

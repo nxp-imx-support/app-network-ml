@@ -16,7 +16,7 @@ ifneq ($(shell $(PKGCONF) --exists libdpdk && echo 0),0)
 $(error "no installation of DPDK found")
 endif
 
-all: static test
+all: static
 .PHONY: shared static
 shared: build/$(APP)-shared
 static: build/$(APP)
