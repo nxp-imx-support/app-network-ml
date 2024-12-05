@@ -1,6 +1,6 @@
 # i.MX DDoS Blocker (imx-ddb)
 
-DDoS attacket bolcer on i.MX9, based on ML model and DPDK fast packets forwarding.
+DDoS attack blocker on i.MX9, based on ML model and DPDK fast packets forwarding.
 
 When you reproduce this project, you may need a Linux host, so that you can train model, build sources and handle an i.MX board.
 Of course, an i.MX9 board is necessary to run imx-ddb.
@@ -21,7 +21,7 @@ pip3 install -r sources/model/requirements.txt
 
 
 ## Model training
-[lucid-ddos](https://github.com/doriguzzi/lucid-ddos/) is choosen as DDoS attack detection model in this project.
+[lucid-ddos](https://github.com/doriguzzi/lucid-ddos/) is chosen as DDoS attack detection model in this project.
 And we used public DDoS attacker dataset to train ML model. By default, it was [CIC-DDoS2019](https://www.unb.ca/cic/datasets/ddos-2019.html) and we also pushed it in sample-dataset folder.
 
 
@@ -43,7 +43,7 @@ python3 lucid_convert.py ../../output/LUCID-ddos-CIC2019.h5 ../../output/LUCID-d
 To make l2capfwd from source, you need to install toolchain and DPDK SDK on your Linux server.
 This [README](https://github.com/NXP/dpdk/blob/22.11-qoriq/nxp/README) may guide you to complete these work.
 
-After that, the PKG_CONFIG_PATH and toolchain path in `sources/env_setup_imx95`(for i.MX95) or `sources/env_setup`(for i.MX93) should be modified based on your environmnet.
+After that, the PKG_CONFIG_PATH and toolchain path in `sources/env_setup_imx95`(for i.MX95) or `sources/env_setup`(for i.MX93) should be modified based on your environment.
 
 Now, let environment variables effective:
 ```
@@ -59,7 +59,7 @@ cd sources
 make
 ```
 
-If the path is corrent and DPDK and toolchain are installed properly, you will get `l2capfwd` and `test` ELF file for aarch64 under `build` folder.
+If the path is correct and DPDK and toolchain are installed properly, you will get `l2capfwd` and `test` ELF file for aarch64 under `build` folder.
 
 
 ## Deploy to board
