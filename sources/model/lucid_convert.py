@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
-# @Time : 2020/3/21
-# @File :convert2tflite.py
-# @Software: PyCharm
+#
+# Copyright 2024 NXP
+#
+# SPDX-License-Identifier: BSD-3-Clause
 
+# Quantize TF model to TFlite
 
 import numpy as np
 import tensorflow as tf

@@ -1,3 +1,9 @@
+# -*- coding: utf-8 -*-
+#
+# Copyright 2024 NXP
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Extract features from pcap file via dpkt.
 # The way features are extracted should be same as /preprocess/extract_ptotocols.cpp
 

@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+# Copyright 2024 NXP
+# SPDX-License-Identifier: BSD-3-Clause
+# 
+# Invoke quantized model on board.
+# Do not run this script on Linux host.
+
 import struct
 import signal
 import os
