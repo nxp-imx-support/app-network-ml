@@ -3,6 +3,11 @@
 #include <vector>
 #include <stdint.h>
 #include <sys/types.h>
+/*
+ * Copyright 2024 NXP
+ * SPDX-License-Identifier: BSD-3-Clause
+ */
+
 #include <string>
 #include <fstream>
 #include <unordered_set>

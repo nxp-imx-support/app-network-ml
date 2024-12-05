@@ -1,3 +1,9 @@
+# -*- coding: utf-8 -*-
+# Copyright 2024 NXP
+# SPDX-License-Identifier: BSD-3-Clause
+# 
+# Web GUI server
+
 from flask import Flask, render_template, jsonify
 import json
 import signal

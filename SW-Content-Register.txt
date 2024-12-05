@@ -1,11 +1,24 @@
 NXP Software Content Register
 
+Release - 0.0.1
+Dec 2024
+
+Outgoing License: LA_OPT_Online Code Hosting NXP_Software_License - v1.2 October 2023
+License File:     LICENSE
+
+--------------------------------------------
+
 Package:                   imx-ddb-0.0.1
 Version:                   0.0.1
-Outgoing License:          LA_OPT_NXP_Software_License v56 April 2024 - Additional distribution license granted - Section 2.3 applies
+Date:                      Dec 2024
+Outgoing License:          LA_OPT_Online Code Hosting NXP_Software_License - v1.2 October 2023 
 License File:              LICENSE
+Package Category:          Demo application
+Type of content:           Source code
 Description and comments:  DDoS attack detection and blocking by AI sample applications
 Release Location:          https://github.com/nxp-imx-support/app-network-ml
-Origin:                    NXP (proprietary)
+Origin:                    NXP (NXP Proprietary)
                            lucid-ddos v2.0 (Apache-2.0) - https://github.com/doriguzzi/lucid-ddos/
                            JSON for Modern C++ v3.11.3 (MIT) - https://github.com/nlohmann/json
+                           Bootstrap v5.1.3 (MIT) - https://github.com/twbs/bootstrap
+                           jQuery v3.7.1 (MIT) - https://jquery.com/

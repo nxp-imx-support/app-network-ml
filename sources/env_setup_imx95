@@ -1,3 +1,9 @@
+#!/bin/bash
+# Copyright 2024 NXP
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# Configure DPDK SDK and toolchain path for i.MX95.
+
 export DPDK_PKG_PATH=~/Software/SDK/dpdk-22.11-imx95-sdk/lib/pkgconfig
 export PKG_CONFIG_PATH=$DPDK_PKG_PATH:$PKG_CONFIG_PATH
 

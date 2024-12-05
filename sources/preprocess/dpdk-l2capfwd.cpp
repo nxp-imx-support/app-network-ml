@@ -1,5 +1,8 @@
-/* SPDX-License-Identifier: BSD-3-Clause
- * Copyright(c) 2010-2016 Intel Corporation
+/*
+ * Copyright 2024 NXP
+ * SPDX-License-Identifier: BSD-3-Clause
+ * 
+ * Forward L2 packets while delivering eth packet to parse it.
  */
 
 #include <stdio.h>

@@ -1,4 +1,9 @@
 #!/bin/bash
+# Copyright 2024 NXP
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# Copy files to specified path to facilitate deployment on the board.
+
 PLATFORM=i.MX95
 echo "Target platform is $PLATFORM"
 

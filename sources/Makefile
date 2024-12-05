@@ -1,5 +1,9 @@
+# Copyright 2024 NXP
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright(c) 2010-2014 Intel Corporation
+
+#
+# Makefile
+#
 
 # binary name
 APP = l2capfwd

@@ -1,3 +1,9 @@
+/*
+ * Copyright 2024 NXP
+ * SPDX-License-Identifier: BSD-3-Clause
+ * 
+ * Connect Web GUI from client and update display information.
+*/
 
 // Get inference report and update charts.
 function get_all_infer_report() {
