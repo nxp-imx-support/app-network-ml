@@ -14,15 +14,21 @@ import argparse
 import numpy as np
 import tflite_runtime.interpreter as tflite
 import json
+import posix_ipc
+import ctypes
 
 class ArrayDesc(object):
     def __init__(self) -> None:
         self.row = 0
         self.col = 0
 
-pipe_reader = "/tmp/cpp_to_py"
-pipe_writer = "/tmp/py_to_cpp"
+# pipe_reader = "/tmp/cpp_to_py"
+# pipe_writer = "/tmp/py_to_cpp"
+sem0 = "/semaphore0"
+sem1 = "/semaphore1"
+
 quit_flag = False
+SHM_SIZE = 5 * 1024 * 1024
 UINT64_SIZE = 8
 DOUBLE_SIZE = 8
 TIME_WIN_SIZE = 10
@@ -159,8 +165,29 @@ def model_predict(args, x_data):
 
 
 def main():
-    global quit_flag
-    global report_log
+    global quit_flag, report_log
+    # Create shared memory and semaphore.
+    sem_0 = posix_ipc.Semaphore(sem0, posix_ipc.O_CREAT, initial_value=0)
+    sem_1 = posix_ipc.Semaphore(sem1, posix_ipc.O_CREAT, initial_value=0)
+
+    shm_lib = ctypes.CDLL("../libshmanager.so")
+
+    shm_lib.create_shm_block.restype = ctypes.c_int
+
+    shm_lib.read_frm_shm.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_char_p]
+    shm_lib.read_frm_shm.restype = ctypes.c_int
+
+    shm_lib.write_to_shm.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_char_p]
+    shm_lib.write_to_shm.restype = ctypes.c_int
+
+    sem_1.release()
+    sem_0.acquire()
+    shm_id = shm_lib.create_shm_block(4 * 1024)
+    if shm_id < 0:
+        log_error("Create shared memory failed.")
+        return
+    # End of create shared memory and semaphore.
+    
     parser = argparse.ArgumentParser(
         description='DDoS attacks detection with convolutional neural networks',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -176,10 +203,6 @@ def main():
     model_args = parser.parse_args()
     print("model_args: ", model_args)
 
-    # fake_data = np.random.randn(100, 11).tolist()
-    # print(model_predict(model_args, fake_data))
-    # return
-
     global quit_flag
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
@@ -188,15 +211,6 @@ def main():
     ready_response = False
     array_desc = ArrayDesc()
     response_array = list()
-
-    # Caution! The order of following two function calls must be like this!
-    writer_fd = os.open(pipe_writer, os.O_WRONLY)
-    reader_fd = os.open(pipe_reader, os.O_RDONLY)
-    log_debug("writer_fd: {}, reader_fd: {}".format(writer_fd, reader_fd))
-
-    poll_fds = select.poll()
-    poll_fds.register(reader_fd, select.POLLIN)
-    poll_fds.register(writer_fd, select.POLLOUT)
 
     cur_ts = 0
     pre_ts = 0

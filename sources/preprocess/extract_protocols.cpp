@@ -24,8 +24,11 @@
 #include <sys/poll.h>
 #include <sys/stat.h>
 #include <pthread.h>
+#include <semaphore.h>
+#include <error.h>
 
 #include "extract_protocols.h"
+#include "shm_manager.h"
 
 /* IPv4 and IPv6 flow table */
 std::unordered_map<uint64_t, v4_flow_info*> v4_flow_table;
@@ -40,39 +43,46 @@ std::vector<struct inferenced_flow_result> result_list;
 std::unordered_map<uint64_t, int> ddos_ip_cnt_list;
 pthread_mutex_t ddos_ip_list_lock = PTHREAD_MUTEX_INITIALIZER;
 
-/* Pipe for communication with AI inference process 
+/* 
+*  Shared memory for IPC
 *  Only for main_lcore
 */
-struct pollfd pfds[2];
+int shm_id;
+const size_t shm_size = 5 * 1024 * 1024;    // 5MB
 bool have_response;
-const char* pipe_reader = "/tmp/py_to_cpp";
-const char* pipe_writer = "/tmp/cpp_to_py";
-int reader_fd;
-int writer_fd;
+const char* SEMAPHORE_0 = "/semaphore0";
+const char* SEMAPHORE_1 = "/semaphore1";
+sem_t* sem_0;
+sem_t* sem_1;
+
 
 
 void main_lcore_handle_init() {
-    // Set true for first request
-    have_response = true;
-    mkfifo(pipe_reader, 0666);
-    mkfifo(pipe_writer, 0666);
-    reader_fd = open(pipe_reader, O_RDONLY);
-    writer_fd = open(pipe_writer, O_WRONLY);
+    // Indicates whether the last inference has a response. 
+    have_response = true;   // Set true for first request
 
-    pfds[0].fd = reader_fd;
-    pfds[0].events = POLLIN;
-    pfds[0].revents = 0;
-    pfds[1].fd = writer_fd;
-    pfds[1].events = POLLOUT;
-    pfds[1].revents = 0;
+    // Create shmared memeory for IPC
+    sem_0 = sem_open(SEMAPHORE_0, O_CREAT, 0644, 0);
+    sem_1 = sem_open(SEMAPHORE_1, O_CREAT, 0644, 0);
 
-    LOG_INFO("pipe init over.\n");
+    sem_wait(sem_1);
+    shm_id = create_shm_block(shm_size);
+    if (shm_id < 0) {
+        LOG_ERROR("Create shamred memeory failed.\n");
+        return;
+    }
+    sem_post(sem_0);
+
+    LOG_INFO("Shared memeory init.\n");
     return;
 }
 
 void main_lcore_handle_cleanup() {
-    close(reader_fd);
-    close(writer_fd);
+    sem_close(sem_0);
+    sem_close(sem_1);
+    sem_unlink(SEMAPHORE_0);
+    sem_unlink(SEMAPHORE_1);
+    destory_shm_block(shm_id);
     return;
 }
 
@@ -591,45 +601,45 @@ void calculate_flow_features(std::vector<pktFeaturePtr>& feature_list, std::vect
 
 void flow_table_inference(volatile bool* force_quit, l2capfwd_report* report_ptr) {
     LOG_DEBUG_3("In flow table inference\n");
-    int nfds = poll(pfds, 2, 200);
     ssize_t read_bytes = 0;
     ssize_t expected_data_length = 0;
     std::vector<pktFeaturePtr> feature_list;
     struct array_desc msg_desc;
     char* buffer = NULL;
 
-    // pipe is not readable and writeable
-    if (nfds <= 0)
-        return;
-    
-    // If pipe is readable and not receive response yet.
-    if (!have_response && pfds[0].revents & POLLIN) {
-        LOG_DEBUG_3("pipe is readable.\n");
-        read_bytes = read(reader_fd, &(msg_desc.row), sizeof(uint64_t));
-        read_bytes = read(reader_fd, &(msg_desc.col), sizeof(uint64_t));
-        LOG_DEBUG("msg_desc: %lu %lu\n", msg_desc.row, msg_desc.col);
+    // Check shmared memory R/W status. 
+    // If cannot obtain shm R/W this time, return.
+    if (sem_trywait(sem_1) == -1) {
+        if (errno == EAGAIN) return;
+        else {
+            LOG_ERROR("sem_trawait error\n");
+            return;
+        }
+    }
 
+    // If last inference has not receive response, the response is coming now.
+    if (!have_response) {
+        LOG_DEBUG_3("Receive inference response.");        
+        read_frm_shm(shm_id, 0, sizeof(msg_desc), (char*)(&msg_desc));
+        LOG_DEBUG("msg_desc: %lu %lu\n", msg_desc.row, msg_desc.col);
         // It is a one dimensional array, like {1.0, 1.0, 0.0, 0.0, 1.0, 0.0, ...}
         expected_data_length = msg_desc.row * msg_desc.col * sizeof(double);
         LOG_DEBUG("expected array size: %ld\n", expected_data_length);
         buffer = (char*)malloc(expected_data_length);
         if (buffer == NULL) {
-            LOG_ERROR("pipe receive buffer allocation failure.");
+            LOG_ERROR("Inference response receive buffer allocation failure.");
             return;
         }
-        read_bytes = 0;
-        ssize_t buf_offset = 0;
-        ssize_t left_bytes = expected_data_length;
-        while (left_bytes > 0) {
-            read_bytes = read(reader_fd, buffer + buf_offset, left_bytes);
-            if (read_bytes == 0) {
-                *force_quit = true;
-                LOG_ERROR("pipe read erro, read 0 bytes from pipe.");
-                break;
-            }
-            left_bytes -= read_bytes;
-            buf_offset += read_bytes;
-            LOG_DEBUG("read %ld bytes from pipe. %ld bytes left to read. buf offset: %ld \n", read_bytes, left_bytes, buf_offset);
+        int read_offset = 0;
+        int shm_max_buf_size = shm_size - sizeof(msg_desc);
+        sem_post(sem_1);    // to ensure the first loop will not block.
+        while (read_offset < expected_data_length) {
+            sem_wait(sem_1);
+            int actual_read_bytes = (expected_data_length - read_offset) > shm_max_buf_size ? shm_max_buf_size : (expected_data_length - read_offset);
+            read_frm_shm(shm_id, sizeof(msg_desc), actual_read_bytes, buffer + read_offset);
+            read_offset += actual_read_bytes;
+            LOG_DEBUG("read %ld bytes from pipe. %ld bytes left to read.\n", actual_read_bytes, (expected_data_length - read_offset));
+            sem_post(sem_0);
         }
         if (*force_quit) return;
 
@@ -770,37 +780,46 @@ void flow_table_inference(volatile bool* force_quit, l2capfwd_report* report_ptr
         have_response = true;
         // Clean unused variable
         result_list.clear();
-    }
-
-    // If pipe is writeable and last inference is over.
-    if (have_response && pfds[1].revents & POLLOUT) {
-        LOG_DEBUG_3("pipe is writeable.\n");
+    } else {
+        LOG_DEBUG_3("Create new inference request.\n");
         calculate_flow_features(feature_list, result_list);
         if (feature_list.size() == 0 || result_list.size() == 0) {
             LOG_INFO("No flow need to inference");
             return;
         }
-        // Write to pipe.
-        // Calculate the packets amount = time window count * packets per window
+
+        /* Start to write to shared memory. */
+        // Calculate the packets amount = (time window count) * (packets per window)
         msg_desc.row = feature_list.size() * win_max_pkt;
         msg_desc.col = 11;
         LOG_DEBUG("msg_desc: row=%lu, col=%lu\n", msg_desc.row, msg_desc.col);
+        // Pack feature_list and free it
         char* buf = pack_double_type_array(msg_desc, win_max_pkt, feature_list);
         for (auto it = feature_list.begin(); it != feature_list.end(); ++it) {
             free(*it);
             *it = NULL;
         }
         free_feature_list(feature_list);
+        // Write buf to shared memory
         if (buf == NULL)
             return;
-        ssize_t writen_bytes = 0;
-        writen_bytes = write(writer_fd, &msg_desc, sizeof(msg_desc));
-        LOG_DEBUG("%ld bytes to write.\n", writen_bytes);
-        LOG_DEBUG("%lu bytes need to be writen\n", msg_desc.row * msg_desc.col * sizeof(double));
-        writen_bytes = write(writer_fd, buf, msg_desc.row * msg_desc.col * sizeof(double));
-        LOG_DEBUG("%lu bytes to write.\n", writen_bytes);
+        // Write msg_desc firtly.
+        write_to_shm(shm_id, 0, sizeof(msg_desc), (char*)(&msg_desc));
+        int send_bytes = msg_desc.row * msg_desc.col * sizeof(double);
+        int shm_max_buf_size = shm_size - sizeof(msg_desc);
+        int send_offset = 0;
+        while(send_offset < send_bytes) {
+            int actual_write_bytes = (send_bytes - send_offset) > shm_max_buf_size ? shm_max_buf_size : (send_bytes - send_offset);
+            write_to_shm(shm_id, sizeof(msg_desc), actual_write_bytes, buf + send_offset);
+            LOG_DEBUG("%ld bytes to write.\n", actual_write_bytes);
+            send_offset += actual_write_bytes;
+            sem_post(sem_0);
+            sem_wait(sem_1);
+        }
         free(buf);
         buf = NULL;
+        /* End of writing shared memory. */
+
         have_response = false;
     }
 }
