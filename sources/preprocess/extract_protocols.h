@@ -48,8 +48,6 @@ const size_t min_flow_len_threshold = 1;
 const size_t max_flow_len_threshold = 50;
 // Max packets in a time window.
 const size_t win_max_pkt = 10;
-// Time period (second) in a time window.
-const int win_time_period = 10;
 
 const int sample_upper_size = 5000;
 
@@ -89,7 +87,7 @@ struct v4_packet_info {
     __u8 trans_hdr_len;     // Transmission layer info
     
     // Features list
-    struct timeval ts;
+    uint64_t ts;
     __u32 packet_length;    // Entire packet length
     __u16 flags;        // IP Flags
     __u16 highest_layer;     // Highest layer

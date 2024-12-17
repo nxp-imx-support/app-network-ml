@@ -109,8 +109,8 @@ void free_v4_packet_info(struct v4_packet_info* ptr) {
 
 void print_v4_packet_info(struct v4_packet_info* v4_pkt) {
     printf("=====packet begin======\n");
-    printf("pkt information:\n time stamp: %lu:%lu, packet length: %d\n", 
-        v4_pkt->ts.tv_sec, v4_pkt->ts.tv_usec, v4_pkt->packet_length);
+    printf("pkt information:\n time stamp: %llu, packet length: %d\n", 
+        v4_pkt->ts, v4_pkt->packet_length);
     
     char src_ip[16] = { 0 };
 	char dst_ip[16] = { 0 };
@@ -266,7 +266,7 @@ void handle_protocol_stack(struct rte_mbuf *pkt, int *is_ddos) {
         }
 
         v4_pkt = alloc_v4_packet_info();
-        gettimeofday(&v4_pkt->ts, NULL);
+        v4_pkt->ts = rte_get_timer_cycles();
         v4_pkt->packet_length = pkt->pkt_len;
         v4_pkt->ip_hdr_len = (ipv4_hdr->ihl & 0xF) << 2;
         v4_pkt->ip_payload_length = ntohs(ipv4_hdr->total_length) - v4_pkt->ip_hdr_len;
@@ -281,11 +281,11 @@ void handle_protocol_stack(struct rte_mbuf *pkt, int *is_ddos) {
         auto whitelist_it_src = white_ip_list.find(v4_pkt->flow_key.ip_src);
         auto whitelist_it_dst = white_ip_list.find(v4_pkt->flow_key.ip_dst);
         if (whitelist_it_src != white_ip_list.end() || whitelist_it_dst != white_ip_list.end()) {
-            char src_ip[16] = { 0 };
-            char dst_ip[16] = { 0 };
-            inet_ntop(AF_INET, (void*)(&v4_pkt->flow_key.ip_src), src_ip, sizeof(src_ip));
-            inet_ntop(AF_INET, (void*)(&v4_pkt->flow_key.ip_dst), dst_ip, sizeof(dst_ip));
-            LOG_DEBUG("white ip list: src=%s, dst=%s found.\n", src_ip, dst_ip);
+            // char src_ip[16] = { 0 };
+            // char dst_ip[16] = { 0 };
+            // inet_ntop(AF_INET, (void*)(&v4_pkt->flow_key.ip_src), src_ip, sizeof(src_ip));
+            // inet_ntop(AF_INET, (void*)(&v4_pkt->flow_key.ip_dst), dst_ip, sizeof(dst_ip));
+            // LOG_DEBUG("white ip list: src=%s, dst=%s found.\n", src_ip, dst_ip);
             free_v4_packet_info(v4_pkt);
             return;
         }
@@ -470,16 +470,18 @@ inline void normalize_packet(struct v4_packet_info* pkt, double (*time_win)[11],
 }
 
 void transfer_to_feature(std::vector<struct v4_packet_info*>& flow, std::vector<pktFeaturePtr>& ret_feature_list) {
+    // Time period (10s) in a time window.
+    uint64_t win_time_period = 10;
+    
     size_t pkt_num = flow.size();
     if (pkt_num == 0)
         return;
 
     struct v4_packet_info* pkt = NULL;
-    struct timeval* win_start_ts;
-    win_start_ts = &(flow[0]->ts);
-    double now = 0;
-    double start_ts = 0;
-    double diff = 0;
+    uint64_t now = 0;
+    uint64_t start_ts = flow[0]->ts;
+    uint64_t diff = 0;
+    win_time_period *= rte_get_timer_hz();
 
     double (*last_time_win)[11] = NULL;
     last_time_win = (pktFeaturePtr)malloc(win_max_pkt * 11 * sizeof(double));
@@ -495,14 +497,13 @@ void transfer_to_feature(std::vector<struct v4_packet_info*>& flow, std::vector<
     for (; i < pkt_num; ++i) {
         LOG_DEBUG_3("packet %u preproecss\n", i);
         pkt = flow[i];
-        LOG_DEBUG_3("packet ts: %lds %ldus\n", pkt->ts.tv_sec, pkt->ts.tv_usec);
-        now = pkt->ts.tv_sec + (double)pkt->ts.tv_usec * 1e-6;
-        start_ts = win_start_ts->tv_sec + (double)win_start_ts->tv_usec * 1e-6;
+        LOG_DEBUG_3("packet ts: %llu\n", pkt->ts);
+        now = pkt->ts;
         diff = now - start_ts;
-        LOG_DEBUG_3("now timestamp: %lf, start timestamp: %lf, diff time: %lf\n", now, start_ts, diff);
+        LOG_DEBUG_3("now timestamp: %llu, start timestamp: %llu, diff time: %llu\n", now, start_ts, diff);
         
         // Require a new time window.
-        if (diff - win_time_period > 1e-6) {
+        if (diff > win_time_period) {
             LOG_DEBUG_2("new time window require.\n");
             // Padding last window
             while (pkt_seq < win_max_pkt) {
@@ -511,7 +512,7 @@ void transfer_to_feature(std::vector<struct v4_packet_info*>& flow, std::vector<
                 memset(last_time_win + pkt_seq, 0, 11 * sizeof(double));
                 ++pkt_seq;
             }
-            win_start_ts = &(pkt->ts);
+            start_ts = pkt->ts;
             double (*time_win)[11] = (pktFeaturePtr)malloc(win_max_pkt * 11 * sizeof(double));
             if (time_win == NULL) {
                 LOG_ERROR("time_win alloc error.\n");
@@ -529,7 +530,7 @@ void transfer_to_feature(std::vector<struct v4_packet_info*>& flow, std::vector<
             }
             last_time_win = ret_feature_list.back();
             last_time_win[pkt_seq][0] = diff;
-            LOG_DEBUG_2("last_time_win[%d][0] = %lf\n", pkt_seq, diff);
+            LOG_DEBUG_2("last_time_win[%d][0] = %llu\n", pkt_seq, diff);
             normalize_packet(pkt, last_time_win, pkt_seq);
             ++pkt_seq;
         }
