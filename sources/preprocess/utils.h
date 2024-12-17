@@ -59,11 +59,10 @@ public:
 class configuration_items {
 public:
     std::string report_json_path;
-    int share_mem_key;
     int log_level;
     std::unordered_set<uint32_t> ip_white_set;
 
-    configuration_items() : share_mem_key(0), log_level(1) {}
+    configuration_items() : log_level(1) {}
 };
 
 // Descript the shape of array.

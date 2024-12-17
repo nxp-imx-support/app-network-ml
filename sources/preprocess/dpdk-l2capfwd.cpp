@@ -313,7 +313,7 @@ l2fwd_main_loop(void)
 
 	if (lcore_id == rte_get_main_lcore()) {
 		LOG_INFO("Start main lcore handle init.\n");
-		main_lcore_handle_init();
+		main_lcore_handle_init(global_cfgs->ip_white_set);
 	}
 
 	if (qconf->n_rx_port == 0) {
@@ -783,7 +783,10 @@ dpdk_l2capfwd_main(int argc, char **argv, configuration_items& cfgs)
 	unsigned int nb_mbufs;
 
 	global_cfgs = &cfgs;
-	if (global_cfgs == nullptr) return -1;
+	if (global_cfgs == nullptr) {
+		LOG_ERROR("Configuration init failed.");
+		return -1;
+	} 
 
 	/* Init EAL. 8< */
 	ret = rte_eal_init(argc, argv);

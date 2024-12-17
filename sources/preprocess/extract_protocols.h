@@ -200,7 +200,7 @@ public:
 
 // void print_packet_info(struct packet_info* pkt_info);
 
-void main_lcore_handle_init();
+void main_lcore_handle_init(std::unordered_set<uint32_t> &ip_list);
 void main_lcore_handle_cleanup();
 
 

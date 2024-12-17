@@ -43,6 +43,9 @@ std::vector<struct inferenced_flow_result> result_list;
 std::unordered_map<uint64_t, int> ddos_ip_cnt_list;
 pthread_mutex_t ddos_ip_list_lock = PTHREAD_MUTEX_INITIALIZER;
 
+// White IP list
+std::unordered_set<uint32_t> white_ip_list;
+
 /* 
 *  Shared memory for IPC
 *  Only for main_lcore
@@ -57,7 +60,7 @@ sem_t* sem_1;
 
 
 
-void main_lcore_handle_init() {
+void main_lcore_handle_init(std::unordered_set<uint32_t> &ip_list) {
     // Indicates whether the last inference has a response. 
     have_response = true;   // Set true for first request
 
@@ -74,6 +77,8 @@ void main_lcore_handle_init() {
     sem_post(sem_0);
 
     LOG_INFO("Shared memeory init.\n");
+
+    white_ip_list = ip_list;
     return;
 }
 
@@ -220,12 +225,12 @@ uint64_t calculate_flow_hash_key(uint64_t* block, size_t blk_size) {
         return ret;
     }
 
-    LOG_DEBUG("u64_hash(");
+    LOG_DEBUG_3("u64_hash(");
     for (size_t i = 0; i < blk_size; ++i) {
         ret ^= u64_hash(block[i] & mask[i]);
-        LOG_DEBUG("%016lx ", block[i] & mask[i]);
+        LOG_DEBUG_3("%016lx ", block[i] & mask[i]);
     }
-    LOG_DEBUG(")\n");
+    LOG_DEBUG_3(")\n");
 
     return ret;
 }
@@ -239,7 +244,7 @@ void handle_protocol_stack(struct rte_mbuf *pkt, int *is_ddos) {
     // print_bytes_hex((char*)eth_hdr, pkt->pkt_len);
     if (is_valid_ether_pkt(eth_hdr, pkt->pkt_len) < 0) {
         // rte_pktmbuf_free(pkt);
-        LOG_DEBUG("invalid ehter packet.\n");
+        LOG_DEBUG_3("invalid ehter packet.\n");
         return;
     }
     pro_ptr = (uint8_t*)eth_hdr;
@@ -256,7 +261,7 @@ void handle_protocol_stack(struct rte_mbuf *pkt, int *is_ddos) {
         ipv4_hdr = (struct rte_ipv4_hdr*)(pro_ptr + sizeof(struct rte_ether_hdr));
 	
         if (int ret = is_valid_ipv4_pkt(ipv4_hdr, pkt->pkt_len) < 0) {
-            LOG_DEBUG("invalid ipv4 packet. error code: %d\n", ret);
+            LOG_DEBUG_3("invalid ipv4 packet. error code: %d\n", ret);
             return;
         }
 
@@ -272,7 +277,18 @@ void handle_protocol_stack(struct rte_mbuf *pkt, int *is_ddos) {
         pro_ptr = (uint8_t*)ipv4_hdr + offsetof(struct rte_ipv4_hdr, time_to_live);
         memcpy(&(v4_pkt->flow_key), pro_ptr, sizeof(union v4_flow_key));
 
-        // Add IP filter code.
+        // Filter IP white list.
+        auto whitelist_it_src = white_ip_list.find(v4_pkt->flow_key.ip_src);
+        auto whitelist_it_dst = white_ip_list.find(v4_pkt->flow_key.ip_dst);
+        if (whitelist_it_src != white_ip_list.end() || whitelist_it_dst != white_ip_list.end()) {
+            char src_ip[16] = { 0 };
+            char dst_ip[16] = { 0 };
+            inet_ntop(AF_INET, (void*)(&v4_pkt->flow_key.ip_src), src_ip, sizeof(src_ip));
+            inet_ntop(AF_INET, (void*)(&v4_pkt->flow_key.ip_dst), dst_ip, sizeof(dst_ip));
+            LOG_DEBUG("white ip list: src=%s, dst=%s found.\n", src_ip, dst_ip);
+            free_v4_packet_info(v4_pkt);
+            return;
+        }
 
         // quick judge ddos
         uint64_t ddos_check_key_fwd = v4_pkt->flow_key.ip_src;
@@ -301,7 +317,7 @@ void handle_protocol_stack(struct rte_mbuf *pkt, int *is_ddos) {
         ipv6_hdr = rte_pktmbuf_mtod_offset(pkt, struct rte_ipv6_hdr *,
             sizeof(struct rte_ether_hdr));
     } else {
-        LOG_DEBUG("invalid IP packet.\n");
+        LOG_DEBUG_3("invalid IP packet.\n");
     }
     
     // Handle TCP and UDP
@@ -358,7 +374,7 @@ void handle_protocol_stack(struct rte_mbuf *pkt, int *is_ddos) {
         memset(&bwd_flow_key, 0, sizeof(bwd_flow_key));
         reversal_flow_key(&(v4_pkt->flow_key), &bwd_flow_key);
         flow_hash_key_bwd = calculate_flow_hash_key(bwd_flow_key.block, V4_FLOW_KEY_SIZE);
-        LOG_DEBUG("flow hash key: %lu, bwd flow hash key: %lu\n", flow_hash_key, flow_hash_key_bwd);
+        LOG_DEBUG_1("flow hash key: %lu, bwd flow hash key: %lu\n", flow_hash_key, flow_hash_key_bwd);
 
         pthread_mutex_lock(&v4_flow_table_lock);
         auto it = v4_flow_table.find(flow_hash_key);
@@ -430,10 +446,10 @@ inline void normalize_packet(struct v4_packet_info* pkt, double (*time_win)[11],
     double f_val;
     f_val = 1 - (feature_value_range[1][1] - pkt->packet_length) / (double)(feature_value_range[1][1] - feature_value_range[1][0]);
     time_win[i][1] = f_val;
-    LOG_DEBUG("packet_length: %d -> %lf\n", pkt->packet_length, f_val);
+    LOG_DEBUG_3("packet_length: %d -> %lf\n", pkt->packet_length, f_val);
     f_val = 1 - (feature_value_range[2][1] - pkt->flags) / (double)(feature_value_range[2][1] - feature_value_range[2][0]);
     time_win[i][2] = f_val;
-    LOG_DEBUG("flags: %d -> %lf\n", pkt->flags, f_val);
+    LOG_DEBUG_3("flags: %d -> %lf\n", pkt->flags, f_val);
     f_val = 1 - (feature_value_range[3][1] - pkt->highest_layer) / (double)(feature_value_range[3][1] - feature_value_range[3][0]);
     time_win[i][3] = f_val;
     f_val = 1 - (feature_value_range[4][1] - pkt->protocols_stack) / (double)(feature_value_range[4][1] - feature_value_range[4][0]);
@@ -477,20 +493,20 @@ void transfer_to_feature(std::vector<struct v4_packet_info*>& flow, std::vector<
     // pkt offset in time window
     int pkt_seq = 0;
     for (; i < pkt_num; ++i) {
-        LOG_DEBUG("packet %u preproecss\n", i);
+        LOG_DEBUG_3("packet %u preproecss\n", i);
         pkt = flow[i];
-        LOG_DEBUG("packet ts: %lds %ldus\n", pkt->ts.tv_sec, pkt->ts.tv_usec);
+        LOG_DEBUG_3("packet ts: %lds %ldus\n", pkt->ts.tv_sec, pkt->ts.tv_usec);
         now = pkt->ts.tv_sec + (double)pkt->ts.tv_usec * 1e-6;
         start_ts = win_start_ts->tv_sec + (double)win_start_ts->tv_usec * 1e-6;
         diff = now - start_ts;
-        LOG_DEBUG("now timestamp: %lf, start timestamp: %lf, diff time: %lf\n", now, start_ts, diff);
+        LOG_DEBUG_3("now timestamp: %lf, start timestamp: %lf, diff time: %lf\n", now, start_ts, diff);
         
         // Require a new time window.
         if (diff - win_time_period > 1e-6) {
-            LOG_DEBUG("new time window require.\n");
+            LOG_DEBUG_2("new time window require.\n");
             // Padding last window
             while (pkt_seq < win_max_pkt) {
-                LOG_DEBUG("padding\n");
+                LOG_DEBUG_2("padding\n");
                 last_time_win = ret_feature_list.back();
                 memset(last_time_win + pkt_seq, 0, 11 * sizeof(double));
                 ++pkt_seq;
@@ -508,19 +524,19 @@ void transfer_to_feature(std::vector<struct v4_packet_info*>& flow, std::vector<
             ret_feature_list.push_back(time_win);
         } else {
             if (pkt_seq > win_max_pkt - 1) {
-                LOG_DEBUG("pkt_seq > win_max_pkt, continue.\n");
+                LOG_DEBUG_2("pkt_seq > win_max_pkt, continue.\n");
                 continue;
             }
             last_time_win = ret_feature_list.back();
             last_time_win[pkt_seq][0] = diff;
-            LOG_DEBUG("last_time_win[%d][0] = %lf\n", pkt_seq, diff);
+            LOG_DEBUG_2("last_time_win[%d][0] = %lf\n", pkt_seq, diff);
             normalize_packet(pkt, last_time_win, pkt_seq);
             ++pkt_seq;
         }
     }
     // padding
     while (pkt_seq < win_max_pkt) {
-        LOG_DEBUG("padding\n");
+        LOG_DEBUG_2("padding\n");
         last_time_win = ret_feature_list.back();
         memset(last_time_win + pkt_seq, 0, 11 * sizeof(double));
         ++pkt_seq;
@@ -542,7 +558,7 @@ void calculate_flow_features(std::vector<pktFeaturePtr>& feature_list, std::vect
     // Debug file
     FILE *log = fopen("infer_data_debug.txt", "a");
     fprintf(log, "\nIn calculate_flow_features.\n");
-    LOG_DEBUG("In calculate_flow_features\n");
+    LOG_DEBUG_2("In calculate_flow_features\n");
 
     struct inferenced_flow_result result_item;
     result_item.infer_result = 0.0;
@@ -559,11 +575,11 @@ void calculate_flow_features(std::vector<pktFeaturePtr>& feature_list, std::vect
             continue;
         }
         std::vector<struct v4_packet_info*>& flow_pkts = flow_item->flow_pkt_list;
-        LOG_DEBUG("flow length: %lu\n", flow_pkts.size());
+        LOG_DEBUG_2("flow length: %lu\n", flow_pkts.size());
         fprintf(log, "flow length: %lu\n", flow_pkts.size());
         // filter short flow
         if (flow_pkts.size() < min_flow_len_threshold) {
-            LOG_DEBUG("short flow\n");
+            LOG_DEBUG_2("short flow\n");
             fprintf(log, "short flow\n");
             continue;
         }
@@ -600,7 +616,7 @@ void calculate_flow_features(std::vector<pktFeaturePtr>& feature_list, std::vect
 }
 
 void flow_table_inference(volatile bool* force_quit, l2capfwd_report* report_ptr) {
-    LOG_DEBUG_3("In flow table inference\n");
+    LOG_DEBUG("In flow_table_inference\n");
     ssize_t read_bytes = 0;
     ssize_t expected_data_length = 0;
     std::vector<pktFeaturePtr> feature_list;
@@ -619,7 +635,7 @@ void flow_table_inference(volatile bool* force_quit, l2capfwd_report* report_ptr
 
     // If last inference has not receive response, the response is coming now.
     if (!have_response) {
-        LOG_DEBUG_3("Receive inference response.");        
+        LOG_DEBUG("Receive inference response.");        
         read_frm_shm(shm_id, 0, sizeof(msg_desc), (char*)(&msg_desc));
         LOG_DEBUG("msg_desc: %lu %lu\n", msg_desc.row, msg_desc.col);
         // It is a one dimensional array, like {1.0, 1.0, 0.0, 0.0, 1.0, 0.0, ...}
@@ -731,7 +747,7 @@ void flow_table_inference(volatile bool* force_quit, l2capfwd_report* report_ptr
             uint32_t high_ip = (uint32_t)(ip_item->first >> 32);
             inet_ntop(AF_INET, (void*)(&low_ip), src_ip, sizeof(src_ip));
             inet_ntop(AF_INET, (void*)(&high_ip), dst_ip, sizeof(dst_ip));
-            LOG_DEBUG_3("(%s<->%s) attack count: %d\n", src_ip, dst_ip, ip_item->second);
+            LOG_DEBUG("(%s<->%s) attack count: %d\n", src_ip, dst_ip, ip_item->second);
             if (report_ptr != NULL) {
                 std::string tmp_str(src_ip);
                 tmp_str.append(" --- ");
@@ -766,12 +782,12 @@ void flow_table_inference(volatile bool* force_quit, l2capfwd_report* report_ptr
         }
         pthread_mutex_unlock(&v4_flow_table_lock);
         pthread_mutex_lock(&v4_flow_table_lock);
-        LOG_DEBUG_3("v4_flow_table size: %lu (before cleaning)", v4_flow_table.size());
+        LOG_DEBUG_1("v4_flow_table size: %lu (before cleaning)", v4_flow_table.size());
         for (auto f_key : clean_key_set) {
             delete v4_flow_table[f_key];
             v4_flow_table.erase(f_key);
         }
-        LOG_DEBUG_3("v4_flow_table size: %lu (after cleaning)", v4_flow_table.size());
+        LOG_DEBUG_1("v4_flow_table size: %lu (after cleaning)", v4_flow_table.size());
         pthread_mutex_unlock(&v4_flow_table_lock);
         clean_key_set.clear();
         clean_ip_set.clear();
@@ -781,10 +797,12 @@ void flow_table_inference(volatile bool* force_quit, l2capfwd_report* report_ptr
         // Clean unused variable
         result_list.clear();
     } else {
-        LOG_DEBUG_3("Create new inference request.\n");
+        LOG_DEBUG("Create new inference request.\n");
         calculate_flow_features(feature_list, result_list);
         if (feature_list.size() == 0 || result_list.size() == 0) {
             LOG_INFO("No flow need to inference");
+            // Post semaphore for next round.
+            sem_post(sem_1);
             return;
         }
 
@@ -803,8 +821,9 @@ void flow_table_inference(volatile bool* force_quit, l2capfwd_report* report_ptr
         // Write buf to shared memory
         if (buf == NULL)
             return;
-        // Write msg_desc firtly.
+        // Write msg_desc firstly.
         write_to_shm(shm_id, 0, sizeof(msg_desc), (char*)(&msg_desc));
+        // Write array
         int send_bytes = msg_desc.row * msg_desc.col * sizeof(double);
         int shm_max_buf_size = shm_size - sizeof(msg_desc);
         int send_offset = 0;
@@ -826,9 +845,9 @@ void flow_table_inference(volatile bool* force_quit, l2capfwd_report* report_ptr
 
 // This function is only for debug.
 void insert_v4_flow_table(struct v4_packet_info* v4_pkt) {
-    LOG_DEBUG("flow key block: %016lx %016lx\n", v4_pkt->flow_key.block[0], v4_pkt->flow_key.block[1]);
+    LOG_DEBUG_1("flow key block: %016lx %016lx\n", v4_pkt->flow_key.block[0], v4_pkt->flow_key.block[1]);
     uint64_t flow_hash_key = calculate_flow_hash_key(v4_pkt->flow_key.block, V4_FLOW_KEY_SIZE);
-    LOG_DEBUG("flow hash key: %lu\n", flow_hash_key);
+    LOG_DEBUG_1("flow hash key: %lu\n", flow_hash_key);
     auto it = v4_flow_table.find(flow_hash_key);
     if (it != v4_flow_table.end()) {
         it->second->flow_pkt_list.push_back(v4_pkt);

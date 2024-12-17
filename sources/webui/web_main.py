@@ -12,7 +12,6 @@ SER_HOST = "0.0.0.0"
 SER_PORT = 5000
 L2FWDCAP_REPORT = "../l2capfwd_report.json"
 INFERENCE_REPORT = "../model/model_infer_report.json"
-WHITELIST = ["192.168.0.157", "255.255.255.255", "0.0.0.0"]
 
 app = Flask(__name__)
 
@@ -21,11 +20,6 @@ def signal_handler(signum, frame):
         print("Signal {} recv, exit...".format(signum))
         exit(0)
 
-def check_whitelist(ip_part):
-    for ip_addr in WHITELIST:
-        if ip_addr in ip_part:
-            return True
-    return False
 
 @app.route("/")
 def home():
@@ -43,7 +37,7 @@ def get_status_json():
         ip_part, atk_cnt = item.split(":")
         ip_part.strip()
         atk_cnt = int(atk_cnt.strip())
-        if atk_cnt >= 100 and not check_whitelist(ip_part):
+        if atk_cnt >= 100:
             ret_dict["ip_connections_list"].append([ip_part, 1])
             ddos_cnt += 1
         else:

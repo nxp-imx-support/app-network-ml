@@ -14,6 +14,8 @@ SRCS-y := preprocess/dpdk-l2capfwd.cpp preprocess/main.cpp preprocess/extract_pr
 SRCS-test := preprocess/test.cpp preprocess/extract_protocols.cpp preprocess/utils.cpp
 
 PKGCONF ?= pkg-config
+INCLUDE_PATH := ./ipc
+LIB_PATH := ./ipc
 
 # Build using pkg-config variables if possible
 ifneq ($(shell $(PKGCONF) --exists libdpdk && echo 0),0)
@@ -45,8 +47,9 @@ build/$(APP)-shared: $(SRCS-y) Makefile $(PC_FILE) | build
 	$(CC) $(CFLAGS) $(SRCS-y) -o $@ $(LDFLAGS) $(LDFLAGS_SHARED)
 
 build/$(APP): $(SRCS-y) Makefile $(PC_FILE) $(SRC-h) | build
-	$(CC) $(CFLAGS) $(SRCS-y) -o $@ $(LDFLAGS) $(LDFLAGS_STATIC)
+	$(CC) $(CFLAGS) $(SRCS-y) -I $(INCLUDE_PATH) -L $(LIB_PATH) -lshmanager -o $@ $(LDFLAGS) $(LDFLAGS_STATIC)
 	cp ./preprocess/config.json ./build/
+	cp ./ipc/libshmanager.so ./build/
 
 build/test: $(SRCS-test) Makefile $(SRC-h) | build
 	$(CC) $(CFLAGS) $(SRCS-test) -o $@ $(LDFLAGS) $(LDFLAGS_STATIC)

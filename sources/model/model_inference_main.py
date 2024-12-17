@@ -22,8 +22,6 @@ class ArrayDesc(object):
         self.row = 0
         self.col = 0
 
-# pipe_reader = "/tmp/cpp_to_py"
-# pipe_writer = "/tmp/py_to_cpp"
 sem0 = "/semaphore0"
 sem1 = "/semaphore1"
 
@@ -143,7 +141,6 @@ def model_predict(args, x_data):
             model.set_tensor(input_desc['index'], input_data)
             model.invoke()
             out_list = model.get_tensor(output_desc['index'])
-            log_debug("out_list shape: {}".format(out_list.shape))
             for tmp in out_list:
                 if tmp != 0:
                     Y_pred.append(1.0)
@@ -174,10 +171,10 @@ def main():
 
     shm_lib.create_shm_block.restype = ctypes.c_int
 
-    shm_lib.read_frm_shm.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_char_p]
+    shm_lib.read_frm_shm.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_char_p]
     shm_lib.read_frm_shm.restype = ctypes.c_int
 
-    shm_lib.write_to_shm.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_char_p]
+    shm_lib.write_to_shm.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_char_p]
     shm_lib.write_to_shm.restype = ctypes.c_int
 
     sem_1.release()
@@ -208,79 +205,95 @@ def main():
     signal.signal(signal.SIGTERM, signal_handler)
     signal.signal(signal.SIGPIPE, signal_handler)
 
-    ready_response = False
+
+    msg_desc_size = UINT64_SIZE * 2
     array_desc = ArrayDesc()
     response_array = list()
 
-    cur_ts = 0
-    pre_ts = 0
-    diff_ts = 1
+    # Let dpdk-l2capfwd know it can raise a inference request.
+    sem_1.release()
 
     while quit_flag == False:
-        cur_ts = time.time()
-        diff_ts = cur_ts - pre_ts
-        if diff_ts > time_period:
-            pre_ts = cur_ts
-            # poll timeout 10ms
-            events = poll_fds.poll(100)
-            for fd, flag in events:
-                # log_debug("event come, fd: {}, flag: {}".format(fd, flag))
-                if ready_response == False and fd == reader_fd and flag & select.POLLIN:
-                    log_debug("Read from pipe...")
-                    tot_time = time.time()
-                    buf = os.read(fd, UINT64_SIZE * 2)
-                    array_desc.row, array_desc.col = struct.unpack("QQ", buf)
-                    log_debug("expected {} bytes to be read: row={}, col={}".format(array_desc.row * array_desc.col * DOUBLE_SIZE, array_desc.row, array_desc.col))
-                    
-                    left_bytes = array_desc.row * array_desc.col * DOUBLE_SIZE
-                    tmp = b''
-                    buf = b''
-                    while left_bytes > 0 and quit_flag == False:
-                        tmp = os.read(fd, 65536)
-                        buf += tmp
-                        left_bytes -= len(tmp)
-                    if quit_flag:
-                        break
-                    # buf = os.read(fd, array_desc.row * array_desc.col * DOUBLE_SIZE)
-                    x_data = unpack_double_type_array(array_desc, buf)
-                    # print(x_data)
-                    log_debug("Start model prediction.")
-                    model_ts1 = time.time()
-                    response_array = model_predict(model_args, x_data)
-                    model_ts2 = time.time()
-                    report_log["infer_time"] = model_ts2 - model_ts1
-                    log_info("Inference time: {}s".format(report_log["infer_time"]))
-                    with open(MODEL_INFERENCE_REPORT_PATH, "w") as fd:
-                        fd.write(json.dumps(report_log))
-                    log_debug("Finish model prediction.")
-                    tot_time = time.time() - tot_time
-                    log_info("Handle time: {}s".format(tot_time))
-                    if response_array is None:
-                        quit_flag = True
-                        break
-                    ready_response = True
-                    if quit_flag:
-                        break
+        try:
+            sem_0.acquire(timeout=1)
+        except posix_ipc.BusyError:
+            continue
+        
+        # if status == False:
+        #     continue
 
-                if ready_response and fd == writer_fd and flag & select.POLLOUT:
-                    log_debug("Prepare to write to pipe.")
-                    array_desc.row = 1
-                    array_desc.col = len(response_array)
-                    log_debug("array row: {}, array col: {}".format(array_desc.row, array_desc.col))
-                    desc_buf = struct.pack("QQ", array_desc.row, array_desc.col)
-                    # log_debug("desc_buf: {}".format(desc_buf.hex()))
-                    log_debug("response_array: {}".format(response_array))
-                    buf = pack_double_type_array(array_desc, response_array)
-                    os.write(fd, desc_buf)
-                    os.write(fd, buf)
-                    ready_response = False
-                    log_debug("Finish writing.")
+        log_debug("Read from shared memory...")
+        ts_start = time.time()
+        expected_data_length = msg_desc_size
+        buf = bytes(expected_data_length)
+        shm_lib.read_frm_shm(shm_id, 0, expected_data_length, buf)
+        array_desc.row, array_desc.col = struct.unpack("QQ", buf)
+        log_debug("expected {} bytes to be read: row={}, col={}".format(expected_data_length, array_desc.row, array_desc.col))
+        
+        expected_data_length = array_desc.row * array_desc.col * DOUBLE_SIZE
+        log_debug("expected {} bytes to be read".format(expected_data_length))
+        buf = bytes(expected_data_length)
+        read_offset = 0
+        shm_max_buf_size = SHM_SIZE - msg_desc_size
+        sem_0.release()
+        while read_offset < expected_data_length:
+            sem_0.acquire()
+            actual_read_bytes = min(expected_data_length - read_offset, shm_max_buf_size)
+            shm_lib.read_frm_shm(shm_id, msg_desc_size, actual_read_bytes, buf[read_offset:])
+            log_debug("Read {} bytes from shared memory".format(actual_read_bytes))
+            read_offset += actual_read_bytes
+            sem_1.release()
+        if quit_flag:
+            break
+        # buf = os.read(fd, array_desc.row * array_desc.col * DOUBLE_SIZE)
+        ts_checkpoint1 = time.time()
+        x_data = unpack_double_type_array(array_desc, buf)
+        ts_checkpoint2 = time.time()
+        # print(x_data)
+        log_debug("Start model prediction.")
+        model_ts1 = time.time()
+        response_array = model_predict(model_args, x_data)
+        model_ts2 = time.time()
+        report_log["infer_time"] = model_ts2 - model_ts1
+        log_info("Inference time: {}s".format(report_log["infer_time"]))
+        with open(MODEL_INFERENCE_REPORT_PATH, "w") as fd:
+            fd.write(json.dumps(report_log))
+        log_debug("Finish model prediction.")
+        tot_time = time.time() - ts_start
+        log_info("Handle time: {}s. Shared memory read time: {}s, Receive time: {}s.".format(tot_time, ts_checkpoint1 - ts_start, ts_checkpoint2 - ts_start))
+        if response_array is None:
+            quit_flag = True
+            break
+        if quit_flag:
+            break
+
+        log_debug("Write to shared memory.")
+        array_desc.row = 1
+        array_desc.col = len(response_array)
+        log_debug("array row: {}, array col: {}".format(array_desc.row, array_desc.col))
+        # Write msg_desc firstly
+        buf = struct.pack("QQ", array_desc.row, array_desc.col)
+        shm_lib.write_to_shm(shm_id, 0, msg_desc_size, buf)
+        # Write array
+        log_debug("response_array: {}".format(response_array))
+        buf = pack_double_type_array(array_desc, response_array)
+        send_bytes = array_desc.row * array_desc.col * DOUBLE_SIZE
+        shm_max_buf_size = SHM_SIZE - msg_desc_size
+        send_offset = 0
+        while send_offset < send_bytes:
+            actual_write_bytes = min(send_bytes - send_offset, shm_max_buf_size)
+            shm_lib.write_to_shm(shm_id, msg_desc_size, actual_write_bytes, buf[send_offset:])
+            log_debug("{} bytes to write.".format(actual_write_bytes))
+            send_offset += actual_write_bytes
+            sem_1.release()
+            sem_0.acquire()
+        
+        log_debug("Finish writing.")
+        sem_1.release()
 
     log_info("Clean up...")
-    poll_fds.unregister(reader_fd)
-    poll_fds.unregister(writer_fd)
-    os.close(reader_fd)
-    os.close(writer_fd)
+    sem_0.close()
+    sem_1.close()
 
 if __name__ == '__main__':
     main()

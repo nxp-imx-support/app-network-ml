@@ -105,11 +105,6 @@ int parse_configuration(const std::string config_path, configuration_items& cfgs
         return -1;
     }
 
-    // Get share memory key
-    char* endptr = NULL;
-    std::string hex_string = json_cfgs["share_mem_key"];
-    cfgs.share_mem_key = strtol(hex_string.c_str(), &endptr, 16);
-
     // Get white IP list
     uint32_t ip_buf;
     int status = 0;
