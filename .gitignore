@@ -1,6 +1,7 @@
 .vscode/
 output/*
 tf2_16/*
+imxddb-env/*
 # sample-dataset/*
 **/build
 **/tmp_log.txt

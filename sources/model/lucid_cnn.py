@@ -42,7 +42,6 @@ from sklearn.metrics import f1_score, accuracy_score, confusion_matrix
 from sklearn.utils import shuffle
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 # from tensorflow.keras.wrappers.scikit_learn import KerasClassifier
-from scikeras.wrappers import KerasClassifier
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 
 import tensorflow.keras.backend as K
@@ -58,18 +57,10 @@ VAL_HEADER = ['Model', 'Samples', 'Accuracy', 'F1Score', 'Hyper-parameters','Val
 PREDICT_HEADER = ['Model', 'Time', 'Packets', 'Samples', 'DDOS%', 'Accuracy', 'F1Score', 'TPR', 'FPR','TNR', 'FNR', 'Source']
 
 # hyperparameters
-PATIENCE = 10
 DEFAULT_EPOCHS = 100
-hyperparamters = {
-    "model__learning_rate": [0.1,0.01],
-    "batch_size": [1024,2048],
-    "model__kernels": [32,64],
-    "model__regularization" : [None,'l1'],
-    "model__dropout" : [None,0.2]
-}
 
 def Conv2DModel(model_name, input_shape, kernel_col, kernels=64, kernel_rows=3, 
-                learning_rate=0.01, regularization=None, dropout=None):
+                learning_rate=0.0001, regularization=None, dropout=0.2):
     
     model = Sequential(name=model_name)
     regularizer = regularization
@@ -143,29 +134,13 @@ def main(argv):
 
         model_name = "LUCID-ddos-CIC2019"
 
-        # Simple train
-        # model = Conv2DModel(model_name=model_name, input_shape=X_train.shape[1:], kernel_col=X_train.shape[2])
-        # model.fit(X_train, Y_train, epochs=args.epochs, validation_data=(X_val, Y_val))
-        # return
+        model = Conv2DModel(model_name, input_shape=X_train.shape[1:], kernel_col=X_train.shape[2])
 
-        keras_classifier = KerasClassifier(model=Conv2DModel,model_name=model_name, input_shape=X_train.shape[1:], kernel_col=X_train.shape[2])
-        rnd_search_cv = GridSearchCV(keras_classifier, hyperparamters, cv=args.cross_validation if args.cross_validation > 1 else [(slice(None), slice(None))], refit=True, return_train_score=True)
+        model.fit(X_train, Y_train, epochs=args.epochs, validation_data=(X_val, Y_val), batch_size=1024)
+        model_save_path = os.path.join(OUTPUT_FOLDER, model_name)
+        model.export(model_save_path, "tf_saved_model")
 
-        best_model_filename = os.path.join(OUTPUT_FOLDER, model_name)
-        best_model_filename += ".keras"
-        
-        rnd_search_cv.fit(X_train, Y_train, epochs=args.epochs, validation_data=(X_val, Y_val))
-
-        # With refit=True (default) GridSearchCV refits the model on the whole training set (no folds) with the best
-        # hyper-parameters and makes the resulting model available as rnd_search_cv.best_estimator_.model
-        best_model = rnd_search_cv.best_estimator_.model_
-
-        best_model.save(best_model_filename)
-
-
-        print("Best accuracy: ", rnd_search_cv.best_score_)
-        print("Best parameters: ", rnd_search_cv.best_params_)
-        print("Best model path: ", best_model_filename)
+        print("Best model path: ", model_save_path)
 
     if args.predict is not None:
         predict_file = open(OUTPUT_FOLDER + 'predictions-' + time.strftime("%Y%m%d-%H%M%S") + '.csv', 'a', newline='')
@@ -207,7 +182,6 @@ def main(argv):
 
         predict_file.close()
 
-    
 
 def report_results(Y_true, Y_pred, model_name, data_source, prediction_time, writer):
     ddos_rate = '{:04.3f}'.format(sum(Y_pred) / Y_pred.shape[0])
