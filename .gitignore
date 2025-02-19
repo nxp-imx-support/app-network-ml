@@ -1,5 +1,6 @@
 .vscode/
 output/*
+tf2_16/*
 # sample-dataset/*
 **/build
 **/tmp_log.txt
@@ -9,5 +10,6 @@ memo.txt
 # !sample-dataset/.gitkeep
 
 **/__pycache__/*
+**/test_tmp
 *.pyc
 *.o

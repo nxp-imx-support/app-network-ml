@@ -136,7 +136,7 @@ void print_v6_packet_info(struct v6_packet_info* v6_pkt) {
 }
 
 /**
- * Note: It is not a standard judgement method for Ether frame. 
+ * Note: It is not a standard judgement method for Ethernet frame. 
  * In the case, we only support TYPE=IPv4/IPv6
 */
 static inline int 

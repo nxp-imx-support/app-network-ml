@@ -69,12 +69,14 @@ def signal_handler(signum, frame):
 
 def unpack_double_type_array(array_desc, buf):
     log_debug("buf length: {}".format(len(buf)))
-    ret = list()
-    row_size = array_desc.col * DOUBLE_SIZE
-    fmt_str = 'd' * array_desc.col
-    for row_idx in range(array_desc.row):
-        tmp = list(struct.unpack(fmt_str, buf[row_idx * row_size:(row_idx + 1) * row_size]))
-        ret.append(tmp)
+    # ret = list()
+    # row_size = array_desc.col * DOUBLE_SIZE
+    # fmt_str = 'd' * array_desc.col
+    # for row_idx in range(array_desc.row):
+    #     tmp = list(struct.unpack(fmt_str, buf[row_idx * row_size:(row_idx + 1) * row_size]))
+    #     ret.append(tmp)
+    ret = np.frombuffer(buf, np.float64)
+    ret.reshape(array_desc.row, array_desc.col)
     return ret
 
 def pack_double_type_array(array_desc, arr):
@@ -105,7 +107,7 @@ def model_predict(args, x_data):
         report_log["npu_used"] = 1
 
     # format the input shape
-    x_data = np.array(x_data)
+    # x_data = np.array(x_data)
     log_debug("x_data shape: {}".format(x_data.shape))
     # log_file.write("x_data shape: {}\n".format(x_data.shape))
     x_data = x_data.reshape((-1, TIME_WIN_SIZE, 11, 1))
@@ -217,6 +219,8 @@ def main():
         try:
             sem_0.acquire(timeout=1)
         except posix_ipc.BusyError:
+            continue
+        except posix_ipc.SignalError:
             continue
         
         # if status == False:

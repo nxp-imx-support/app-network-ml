@@ -5,12 +5,14 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 # Quantize TF model to TFlite
+# Example: python3 lucid_convert.py ../../output/LUCID-ddos-CIC2019.keras ../../output/LUCID-ddos-CIC2019-quant-int8.tflite ../../sample-dataset/dataset_train.hdf5
 
 import numpy as np
 import tensorflow as tf
 import glob
 import h5py
 import sys
+import shutil
 
 dataset_path = ""
 out_tflite = ""
@@ -37,9 +39,9 @@ def get_representative_dataset_gen():
         yield [input_data]
 
 
-def keras2tflite(model):
+def tf_model_to_tflite(model):
 
-    converter = tf.lite.TFLiteConverter.from_keras_model(model)
+    converter = tf.lite.TFLiteConverter.from_saved_model(model)
 
     converter.optimizations = [tf.lite.Optimize.DEFAULT]
     converter.representative_dataset = get_representative_dataset_gen
@@ -63,6 +65,10 @@ if __name__ == '__main__':
     out_tflite = sys.argv[2]
     dataset_path = sys.argv[3]
 
-    model = tf.keras.models.load_model(keras_model, custom_objects={'tf': tf}, compile=False)
+    # model = tf.keras.models.load_model(keras_model, custom_objects={'tf': tf}, compile=False)
+    model = tf.keras.models.load_model(keras_model)
     model.summary()
-    keras2tflite(model)
+    model.export("./tmp_model", "tf_saved_model")
+    pb_model_path = "./tmp_model"
+    tf_model_to_tflite(pb_model_path)
+    shutil.rmtree(pb_model_path)

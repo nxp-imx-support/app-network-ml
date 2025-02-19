@@ -174,6 +174,12 @@ def execute_demo_loop(hostname):
     os.chdir(original_dir)   
     # Wait for exit signal
     while quit_flag == False:
+        if l2capfwd_process.poll() is not None:
+            quit_flag = True
+        if infer_process.poll() is not None:
+            quit_flag = True
+        if webui_process.poll() is not None:
+            quit_flag = True
         time.sleep(1)
     l2capfwd_process.terminate()
     infer_process.terminate()
@@ -187,6 +193,12 @@ def execute_demo_loop(hostname):
     webui_process.wait()
     print("webui exit.")
     print("All exit.")
+    if l2capfwd_process.returncode != 0:
+        print("l2capfwd error {}, detailed log at: ./debug.log".format(l2capfwd_process.returncode))
+    if infer_process.returncode != 0:
+        print("inference error {}, detailed log at: ./model/debug.log".format(infer_process.returncode))
+    if webui_process.returncode != 0:
+        print("webui error {}, detailed log at: ./webui/debug.log".format(webui_process.returncode))
     return
 
 def main():
