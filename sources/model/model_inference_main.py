@@ -30,7 +30,7 @@ SHM_SIZE = 5 * 1024 * 1024
 UINT64_SIZE = 8
 DOUBLE_SIZE = 8
 TIME_WIN_SIZE = 10
-BATCH_SIZE = 128
+BATCH_SIZE = 1
 # 1 second
 time_period = 1
 inference_no = 1
@@ -69,12 +69,6 @@ def signal_handler(signum, frame):
 
 def unpack_double_type_array(array_desc, buf):
     log_debug("buf length: {}".format(len(buf)))
-    # ret = list()
-    # row_size = array_desc.col * DOUBLE_SIZE
-    # fmt_str = 'd' * array_desc.col
-    # for row_idx in range(array_desc.row):
-    #     tmp = list(struct.unpack(fmt_str, buf[row_idx * row_size:(row_idx + 1) * row_size]))
-    #     ret.append(tmp)
     ret = np.frombuffer(buf, np.float64)
     ret.reshape(array_desc.row, array_desc.col)
     return ret
@@ -120,15 +114,10 @@ def model_predict(args, x_data):
         model.resize_tensor_input(input_desc['index'], [BATCH_SIZE, x_data.shape[1], x_data.shape[2], x_data.shape[3]])
     model.allocate_tensors()
 
-    # log_file.write("input_desc_type: {}, input_scale: {}, input_zero_point: {}\n".format(
-    #     input_desc['dtype'], input_scale, input_zero_point
-    # ))
-
-    
+    Y_pred = list()
     # Start inference    
     # Batch input
     if BATCH_SIZE > 1:
-        Y_pred = list()
         batch_offset = 0
         batchs = int(x_data.shape[0] / BATCH_SIZE)
         left = x_data.shape[0] % BATCH_SIZE
@@ -143,12 +132,14 @@ def model_predict(args, x_data):
             model.set_tensor(input_desc['index'], input_data)
             model.invoke()
             out_list = model.get_tensor(output_desc['index'])
+            log_debug("out_list shape: {}".format(out_list.shape))
             for tmp in out_list:
-                if tmp != 0:
+                if tmp[0] >= 0.5:
                     Y_pred.append(1.0)
                 else:
                     Y_pred.append(0.0)
-        Y_pred = Y_pred[:-padding_num]
+        if padding_num != 0:
+            Y_pred = Y_pred[:-padding_num]
     # Single input
     else:
         for vec in x_data:
@@ -156,7 +147,7 @@ def model_predict(args, x_data):
             model.set_tensor(input_desc['index'], input_data)
             model.invoke()
             tmp = np.squeeze(model.get_tensor(output_desc['index']))
-            Y_pred.append(1.0 if tmp != 0 else 0.0)
+            Y_pred.append(1.0 if tmp >= 0.5 else 0.0)
 
     Y_pred = np.array(Y_pred)
     # log_file.close()

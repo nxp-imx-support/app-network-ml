@@ -19,7 +19,6 @@ L2CAPFWD_APP = "./l2capfwd"
 MODEL_APP_DIR = "./model"
 MODEL_APP = "model_inference_main.py"
 MODEL_NAME = "LUCID-ddos-CIC2019-quant-int8.tflite"
-MODEL_NAME_NPU = "LUCID-ddos-CIC2019-quant-int8_vela.tflite"
 WEBUI_APP_DIR = "./webui"
 WEBUI_APP = "web_main.py"
 
@@ -100,7 +99,7 @@ def config_imx95_dpdk():
         ip link set eth0 vf 0 trust on
         ip link set eth1 vf 0 trust on
         """.format(vf_dev_name[0], vf_dev_name[1], vf_pci_addrs[0], vf_pci_addrs[1])
-    sh_ret = subprocess.run(["bash", "-c", cmd], capture_output=True, text=True)
+    sh_ret = subprocess.run(["bash", "-c", cmd], capture_output=True, text=True, env={"LD_LIBRARY_PATH": "."})
     if sh_ret.returncode == 0:
         print("Configure finished.")
     return 0
@@ -125,20 +124,34 @@ def config_imx93_dpdk():
     return 0
 
 def build_model_imx93():
+    global MODEL_NAME
     sh_ret = None
     original_dir = os.getcwd()
-    if not os.path.exists("./model/LUCID-ddos-CIC2019-quant-int8_vela.tflite"):
+    MODEL_NAME = "LUCID-ddos-CIC2019-quant-int8_vela.tflite"
+    if not os.path.exists("./model/{}".format(MODEL_NAME)):
         print("Start vela building.")
         os.chdir("model")
         sh_ret = subprocess.run("vela ./LUCID-ddos-CIC2019-quant-int8.tflite", shell=True, capture_output=True)
-        shutil.move("./output/LUCID-ddos-CIC2019-quant-int8_vela.tflite", ".")
+        shutil.move("./output/{}".format(MODEL_NAME), ".")
         shutil.rmtree("output")
         os.chdir(original_dir)
         print("End vela building.")
-    return 0
+    if os.path.exists("./model/{}".format(MODEL_NAME)):
+        return 0
+    print("No NPU model for i.MX93")
+    return -1
+
+def build_model_imx95():
+    global MODEL_NAME
+    MODEL_NAME = "LUCID-ddos-CIC2019-neutron-converted.tflite"
+    if os.path.exists("./model/{}".format(MODEL_NAME)):
+        return 0
+    print("No NPU model for i.MX95")
+    return -1
 
 def execute_demo_loop(hostname):
     global quit_flag
+    global MODEL_NAME
     original_dir = os.getcwd()
     # Start up l2capfwd
     if not os.access(L2CAPFWD_APP, os.X_OK):
@@ -157,7 +170,9 @@ def execute_demo_loop(hostname):
     print("Start AI inference process")
     cmd_str = ""
     if USE_NPU and hostname == "imx93evk":
-        cmd_str = "python3 {} --model {} -e /usr/lib/libethosu_delegate.so > ./debug.log 2>&1".format(MODEL_APP, MODEL_NAME_NPU)
+        cmd_str = "python3 {} --model {} -e /usr/lib/libethosu_delegate.so > ./debug.log 2>&1".format(MODEL_APP, MODEL_NAME)
+    elif USE_NPU and hostname == "imx95evk":
+        cmd_str = "python3 {} --model {} -e /usr/lib/libneutron_delegate.so > ./debug.log 2>&1".format(MODEL_APP, MODEL_NAME)
     else:
         cmd_str = "python3 {} --model {} > ./debug.log 2>&1".format(MODEL_APP, MODEL_NAME)
     infer_process = subprocess.Popen(cmd_str, shell=True)
@@ -212,6 +227,10 @@ def main():
     # i.MX95
     if host_name == "imx95evk":
         config_status = config_imx95_dpdk()
+        if config_status != 0:
+            return
+        if USE_NPU:
+            config_status = build_model_imx95()
 
     # i.MX93
     if host_name == "imx93evk":
@@ -224,6 +243,8 @@ def main():
     # Execute demo
     if config_status == 0:
         execute_demo_loop(host_name)
+    else:
+        print("Configuration error!")
     return
 
 if __name__ == '__main__':

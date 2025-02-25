@@ -14,8 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-#Sample commands
-# Training: python3 lucid_cnn.py --train ./sample-dataset/  --epochs 100 -cv 5
+#Example commands
+# Training: python3 lucid_cnn.py --train ../../sample-dataset/  --epochs 100 -cv 5
+# Predict: python3 lucid_cnn.py --predict ../..sample-dataset/ --model ../../output/LUCID-ddos-CIC2019.keras
 
 import tensorflow as tf
 import numpy as np
@@ -140,6 +141,9 @@ def main(argv):
         model_save_path = os.path.join(OUTPUT_FOLDER, model_name)
         model.export(model_save_path, "tf_saved_model")
 
+        # another save method for eval Keras model
+        model.save(model_save_path + ".keras")
+
         print("Best model path: ", model_save_path)
 
     if args.predict is not None:
@@ -151,7 +155,7 @@ def main(argv):
 
         iterations = args.iterations
 
-        dataset_filelist = glob.glob(args.predict)
+        dataset_folder = args.predict
 
         if args.model is not None:
             model_list = [args.model]
@@ -161,24 +165,24 @@ def main(argv):
         for model_path in model_list:
             model = load_model(model_path)
 
-            for dataset_file in dataset_filelist:
-                filename = dataset_file.split('/')[-1].strip()
-                X, Y = load_dataset(dataset_file)
-                # [packets] = count_packets_in_dataset([X])
+            X, Y = load_dataset(dataset_folder + "/dataset_test.hdf5")
+            # [packets] = count_packets_in_dataset([X])
 
-                Y_pred = None
-                Y_true = Y
-                avg_time = 0
-                for iteration in range(iterations):
-                    pt0 = time.time()
-                    Y_pred = np.squeeze(model.predict(X, batch_size=2048) > 0.5)
-                    pt1 = time.time()
-                    avg_time += pt1 - pt0
+            Y_pred = None
+            Y_true = Y
+            avg_time = 0
+            for iteration in range(iterations):
+                pt0 = time.time()
+                Y_pred = np.squeeze(model.predict(X, batch_size=2048) > 0.5)
+                pt1 = time.time()
+                avg_time += pt1 - pt0
 
-                avg_time = avg_time / iterations
+            avg_time = avg_time / iterations
 
-                report_results(np.squeeze(Y_true), Y_pred, model_path, filename, avg_time,predict_writer)
-                predict_file.flush()
+            report_results(np.squeeze(Y_true), Y_pred, model_path, dataset_folder, avg_time,predict_writer)
+            accuracy = accuracy_score(y_true=Y_true, y_pred=Y_pred)
+            print("accuracy: {}".format(accuracy))
+            predict_file.flush()
 
         predict_file.close()
 
