@@ -13,7 +13,7 @@ import shutil
 
 support_platforms = ["imx95evk", "imx93evk"]
 
-USE_NPU = True
+USE_NPU = False
 
 L2CAPFWD_APP = "./l2capfwd"
 MODEL_APP_DIR = "./model"

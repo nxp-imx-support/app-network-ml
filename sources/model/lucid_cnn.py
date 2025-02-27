@@ -125,6 +125,7 @@ def main(argv):
         dataset_folder = args.train
         X_train, Y_train = load_dataset(dataset_folder + '/dataset_train.hdf5')
         X_val, Y_val = load_dataset(dataset_folder + '/dataset_val.hdf5')
+        X_test, Y_test = load_dataset(dataset_folder + '/dataset_test.hdf5')
 
         X_train, Y_train = shuffle(X_train, Y_train, random_state=SEED)
         X_val, Y_val = shuffle(X_val, Y_val, random_state=SEED)
@@ -138,8 +139,11 @@ def main(argv):
         model = Conv2DModel(model_name, input_shape=X_train.shape[1:], kernel_col=X_train.shape[2])
 
         model.fit(X_train, Y_train, epochs=args.epochs, validation_data=(X_val, Y_val), batch_size=1024)
+        print("Evaluate test dataset")
+        model.evaluate(X_test, Y_test)
+
         model_save_path = os.path.join(OUTPUT_FOLDER, model_name)
-        model.export(model_save_path, "tf_saved_model")
+        model.save(model_save_path)
 
         # another save method for eval Keras model
         model.save(model_save_path + ".keras")

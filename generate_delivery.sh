@@ -34,5 +34,6 @@ cp sources/model/model_inference_main.py ${DST_DIR}/model
 cp -r sources/webui/* ${DST_DIR}/webui/
 cp output/LUCID-ddos-CIC2019-quant-int8.tflite ${DST_DIR}/model
 cp run_demo.py ${DST_DIR}
+cp run_demo.sh ${DST_DIR}
 cp sources/deploy/* ${DST_DIR}
 echo "Finish."

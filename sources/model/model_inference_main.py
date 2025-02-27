@@ -30,7 +30,7 @@ SHM_SIZE = 5 * 1024 * 1024
 UINT64_SIZE = 8
 DOUBLE_SIZE = 8
 TIME_WIN_SIZE = 10
-BATCH_SIZE = 1
+BATCH_SIZE = 512
 # 1 second
 time_period = 1
 inference_no = 1

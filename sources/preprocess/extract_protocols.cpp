@@ -26,6 +26,7 @@
 #include <pthread.h>
 #include <semaphore.h>
 #include <error.h>
+#include <time.h>
 
 #include "extract_protocols.h"
 #include "shm_manager.h"
@@ -636,7 +637,9 @@ void flow_table_inference(volatile bool* force_quit, l2capfwd_report* report_ptr
 
     // If last inference has not receive response, the response is coming now.
     if (!have_response) {
-        LOG_DEBUG("Receive inference response.");        
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        LOG_DEBUG("Receive inference response. [%lds, %ldns]", ts.tv_sec, ts.tv_nsec);        
         read_frm_shm(shm_id, 0, sizeof(msg_desc), (char*)(&msg_desc));
         LOG_DEBUG("msg_desc: %lu %lu\n", msg_desc.row, msg_desc.col);
         // It is a one dimensional array, like {1.0, 1.0, 0.0, 0.0, 1.0, 0.0, ...}
@@ -797,8 +800,12 @@ void flow_table_inference(volatile bool* force_quit, l2capfwd_report* report_ptr
         have_response = true;
         // Clean unused variable
         result_list.clear();
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        LOG_DEBUG("Complete to receive inference response. [%lds, %ldns]", ts.tv_sec, ts.tv_nsec);
     } else {
-        LOG_DEBUG("Create new inference request.\n");
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        LOG_DEBUG("Create new inference request. [%lds, %ldns]\n", ts.tv_sec, ts.tv_nsec);
         calculate_flow_features(feature_list, result_list);
         if (feature_list.size() == 0 || result_list.size() == 0) {
             LOG_INFO("No flow need to inference");
@@ -841,6 +848,8 @@ void flow_table_inference(volatile bool* force_quit, l2capfwd_report* report_ptr
         /* End of writing shared memory. */
 
         have_response = false;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        LOG_DEBUG("Complete to create new inference request. [%lds, %ldns]\n", ts.tv_sec, ts.tv_nsec);
     }
 }
 
