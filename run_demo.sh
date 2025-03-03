@@ -2,6 +2,8 @@
 # Copyright 2024 NXP
 # SPDX-License-Identifier: BSD-3-Clause
 
+export LD_LIBRARY_PATH=.:$LD_LIBRARY_PATH
+
 SUPPORT_PLATFORMS=("imx95evk" "imx93evk")
 USE_NPU=false
 L2CAPFWD_APP="./l2capfwd"
@@ -84,7 +86,8 @@ config_imx95_dpdk() {
 config_imx93_dpdk() {
     if ! lsmod | grep -q kpage_ncache; then
         echo "Loading kpage_ncache.ko."
-        modprobe kpage_ncache || return 1
+        # modprobe kpage_ncache || return 1
+        insmod /root/kpage_ncache.ko || return 1
     fi
 
     mkdir -p /dev/hugepages
@@ -129,11 +132,12 @@ execute_demo_loop() {
     
     local l2cap_args
     if [[ $hostname == "imx93evk" ]]; then
-        l2cap_args="-c 0x3 -n 2 --vdev 'net_enetqos' --vdev 'net_enetfec' -- -p 0x3 -P -T 5 --no-mac-updating"
+        l2cap_args="-c 0x3 -n 2 --vdev net_enetqos --vdev net_enetfec -- -p 0x3 -P -T 5 --no-mac-updating"
     else
         l2cap_args="-c 0x3 -n 2 -- -p 0x3 -P -T 5 --no-mac-updating"
     fi
 
+    echo "${L2CAPFWD_APP} ${l2cap_args}"
     $L2CAPFWD_APP $l2cap_args > debug.log 2>&1 &
     PIDS["l2capfwd"]=$!
     echo "l2capfwd pid: ${PIDS[l2capfwd]}"
