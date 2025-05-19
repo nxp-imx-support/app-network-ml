@@ -8,7 +8,7 @@ PLATFORM="i.MX95"
 echo "Target platform is ${PLATFORM}"
 
 # Modify this path if you need
-DST_DIR="/home/nxg01813/Board_bak/${PLATFORM}/imx-ddb"
+DST_DIR="~/Board_bak/${PLATFORM}/imx-ddb"
 echo "Dest path:${DST_DIR}"
 
 if [ ! -d ${DST_DIR} ]; then
