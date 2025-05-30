@@ -51,59 +51,65 @@ This demo depends on libpcap to capture network packets from network device and 
 
 ## 2. Hardware<a name="step2"></a>
 The following hardware should be prepared for this demo:
-- i.MX93 or i.MX95 evk
+- i.MX93 or i.MX95 EVK
 - Laptop (for executing commands and simulating user actions)
 - Monitor (24-inch 1080p is best for display)
 - Network cables (at least 2)
 - Router (for Internet access. If not convenient to use Ethernet interface to access the Internet, you can use a 4G router)
 
-**If you use i.MX93Auto evk**, you also need TJA1103 as the second network port. Because there are only one Phy and RJ45 connector on i.MX93Auto evk.
+**If you use i.MX93Auto EVK**, you also need TJA1103 as the second network port. Because there is only one Phy and RJ45 connector on i.MX93Auto EVK. Alternatively, a USB network card can also work.
 
 
 ## 3. Setup<a name="step3"></a>
 
 You can download the BSP from [NXP website](https://www.nxp.com/design/design-center/software/embedded-software/i-mx-software/embedded-linux-for-i-mx-applications-processors:IMXLINUX). 
 
-Here are the configuration on the i.MX93 boards. The configuration on PC is omitted.
-For i.MX95 CPU, it is similar to the following steps. It is not supported by i.MX95 NPU now.
+Here is the configuration on the i.MX93 boards. The configuration on PC is omitted.
+For i.MX95 CPU, it is similar to the following steps. Currently, the i.MX95 NPU is not supported.
 
-### Step 1
- Run `setup_env.sh` on the first installation to install python package and create the required folders.
-
-### Step 2
-  If you need to capture the traffic on the board, you should install tcpdump firstly. The installation is a bit cumbersome. You need to download the following source code in order and compile it directly on board:
-	- flex
-	- bison
-	- libpcap
-	- tcpdump
-
-### Step 3
-Connect network cable between PC and `eth1` on i.MX93. Then, connect network cable between Internet and `eth0` on i.MX93. After this, your the network traffic from PC will go through i.MX93. In addition, if the board can not connect the Internet, you can execute `route del default gw 0.0.0.0` to delete wrong gateway IP.
+### Step 1: hardware connectivity
+Connect network cable between PC and `eth1` on i.MX93. Then, connect network cable between Internet and `eth0` on i.MX93. 
 
 <p align="center">
 <img src="./imx93.png" width=300>
 </p>
 
-### Step 4
-Run `br0_config_with_veth.sh` to configure the soft switch function. This script will create a bridge to forward eth0 and eth1. At the same time, it will create a virtual interface veth0 for debugging and display of results. If all goes well, your PC can now access the Internet through i.MX93.
+### Step 2: libraries installation
+Run `run_demo.sh setup` the first time to install python package and create the required folders. 
 
-  
-### Step 5
-Inference on i.MX
+### Step 3: tcpdump installation
+`tcpdump` is a command-line tool for network traffic capture and analysis. The installation is a bit cumbersome on i.MX platform. There are two ways to install it, source code and Yocto.
 
-In order to use i.MX93 NPU inference, you need to execute `vela <your_model_name>.tflite` to build the tflite model.
-Then, a tflite file with `_vela` suffix is generated in the `output` folder.
+#### tcpdump installation from source code
+You need to download the following source code in order and compile it directly on board:
+	- flex
+	- bison
+	- libpcap
+	- tcpdump
 
-You should modify `analysis_pkt.sh`. Change the `--model_path` option value to the tflite file with `_vela`.
-Execute `./run_demo.sh`. 
-It will start tcpdump and web server processes.
+#### tcpdump installation from Yocto
+Refer to *i.MX Yocto Project User's Guide* and setup the Yocto environmnet for i.MX.
+Build `.deb` package for tcpdump: `bitbake tcpdump`.
 
-Now, you can access the report webpage by `http://<board_ip>:5000` in your PC browser.
+Copy the `.deb` package file to the board and execute `dpkg -i <tcpdump-xxx>.deb`.
+
+You can verify the installation using `tcpdump --version` on the board.
+
+
+### Step 4: software setup
+Run `./run_demo.sh start` to start the demo.
+
+This script will create a bridge to forward eth0 and eth1. At the same time, it will create a virtual interface veth0 for debugging and displaying of results. If all goes well, your PC should now be able to access the Internet through i.MX93.
+
+
+Now, you can access the report webpage by `http://<board_veth0_ip>:5000` in your PC browser.
 
 The model may experience concept drift problem, so different training sets should be used to update the model for different network environments.
 
 ## 4. Results<a name="step4"></a>
 You can see the network traffic analysis report on WebUI.
+
+![webui](./webui.png)
 
 ## 5. FAQs<a name="step5"></a>
 Q: How to train the model?
@@ -111,7 +117,6 @@ Q: How to train the model?
 A: Before training the model, a dataset of captured packets should be prepared. It is usually a set of pcap files captured by tcpdump or wireshark. Then, `deepPacket/preprocess.py` need to be run with correct options and output feature vectors stored as `.npy` format. After that, refer to `train_main()` in `deepPacket/main.py`. 
 
 ## 6. Support<a name="step6"></a>
-
 
 Questions regarding the content/correctness of this example can be entered as Issues within this GitHub repository.
 

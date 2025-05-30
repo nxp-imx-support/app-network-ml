@@ -1,0 +1,5 @@
+USE_NPU=0
+ROOT_PATH=$(pwd)
+DELEGATE_PATH_LINK="./npu_delegate"
+MODEL_PATH_LINK="${ROOT_PATH}/model_path"
+MODEL_PATH="./deepPacket/output_dir/nxp_model-uint8.tflite"

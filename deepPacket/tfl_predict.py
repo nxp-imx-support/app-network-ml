@@ -6,6 +6,15 @@
 #
 # Inference code on i.MX
 
+import os
+import signal
+def sig_handler(s, f):
+    print("[INFO] Recv exit signal in Python.")
+    os.killpg(os.getpgid(0), 9)
+
+signal.signal(signal.SIGINT, sig_handler)
+signal.signal(signal.SIGTERM, sig_handler)
+
 import argparse
 import tflite_runtime.interpreter as tflite
 from utils import load_data, ID_TO_TRAFFIC, ID_TO_APP, ID_TO_CIC, ID_TO_NXP
@@ -18,16 +27,8 @@ from config import MAX_SAMPLE_CNT, FLOW_LEN, WIN_SIZE, MAX_LENGTH, MINI_PCAP
 from collections import Counter
 from traffic_flow import TrafficFlowKey
 from traffic_class_report import TrafficFlowResult, InferenceReport, print_inference_report, export_inferene_report
-import signal
-import os
 import pickle
 
-
-def sig_handler(s, f):
-    os.killpg(os.getpgid(0), 9)
-
-
-signal.signal(signal.SIGINT, sig_handler)
 
 # Different process according to the type of dataset param.
 def predict(model_path, X, ext_delegate, inference_report=None):
@@ -180,6 +181,7 @@ def main():
     args = parser.parse_args()
     
     model_path = args.model_path
+    model_path = os.path.realpath(model_path)
     dataset = args.dataset
     pcap_path = args.pcap
     traff_type = args.traff_type
