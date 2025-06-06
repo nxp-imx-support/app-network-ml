@@ -38,6 +38,7 @@ def predict(model_path, X, ext_delegate, inference_report=None):
     ext_delegate_options = {}
     
     if ext_delegate is not None:
+        ext_delegate = os.path.realpath(ext_delegate)
         print('Loading external delegate from {} with args: {}'.format(
             ext_delegate, ext_delegate_options))
         ext_delegate = [

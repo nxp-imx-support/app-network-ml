@@ -23,6 +23,8 @@ setup_env() {
     if [ ! -d "pcaps" ]; then
         mkdir pcaps
     fi
+
+    chmod +x analysis_pkt.sh
 }
 
 detect_running_platform() {
@@ -58,6 +60,7 @@ config_br_veth() {
     # wait for DHCP
     sleep 15s
     route del default gw 0.0.0.0
+    ip address veth0
 }
 
 clean_br_veth() {
@@ -70,14 +73,15 @@ clean_br_veth() {
 }
 
 imx93_model_build() {
-    echo "vela"
+    echo "Running on i.MX93"
     if [ ! -d vela_output ]; then
         mkdir vela_output
     fi
     if [ ${USE_NPU} == 1 ]; then
         ln -sf /usr/lib/libethosu_delegate.so ${DELEGATE_PATH_LINK}
         vela --output-dir ./vela_output ${MODEL_PATH}
-        ln -sf ./vela_output/${MODEL_PATH%.tflite}_vela.tflite ${MODEL_PATH_LINK}
+        local model_basename=$(basename ${MODEL_PATH})
+        ln -sf ./vela_output/${model_basename%.tflite}_vela.tflite ${MODEL_PATH_LINK}
     else
         ln -sf ${MODEL_PATH} ${MODEL_PATH_LINK}
     fi
@@ -85,7 +89,7 @@ imx93_model_build() {
 }
 
 imx95_model_build() {
-    echo "neutron-convert"
+    echo "Running on i.MX95"
     if [ ${USE_NPU} == 1 ]; then
         ln -sf /usr/lib/libneutron_delegate.so ${DELEGATE_PATH_LINK}
         ln -sf ${MODEL_PATH} ${MODEL_PATH_LINK}
@@ -143,11 +147,9 @@ start_demo() {
     # only for debug, need to remove when release!!
     case ${host_name} in
         "imx95evk")
-            echo "running on imx95"
             imx95_model_build
             ;;
         "imx93evk")
-            echo "running on imx93"
             imx93_model_build
             ;;
         *)
