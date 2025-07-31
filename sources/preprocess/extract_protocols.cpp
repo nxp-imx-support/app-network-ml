@@ -236,7 +236,7 @@ uint64_t calculate_flow_hash_key(uint64_t* block, size_t blk_size) {
     return ret;
 }
 
-void handle_protocol_stack(struct rte_mbuf *pkt, int *is_ddos) {
+base_packet_info* handle_protocol_stack(struct rte_mbuf *pkt, int *is_ddos) {
     // Point to protocol header fileds
     uint8_t* pro_ptr = NULL;
     *is_ddos = 0;
@@ -246,7 +246,7 @@ void handle_protocol_stack(struct rte_mbuf *pkt, int *is_ddos) {
     if (is_valid_ether_pkt(eth_hdr, pkt->pkt_len) < 0) {
         // rte_pktmbuf_free(pkt);
         LOG_DEBUG_3("invalid ehter packet.\n");
-        return;
+        return NULL;
     }
     pro_ptr = (uint8_t*)eth_hdr;
     uint16_t eth_type = ntohs(eth_hdr->ether_type);
@@ -263,7 +263,7 @@ void handle_protocol_stack(struct rte_mbuf *pkt, int *is_ddos) {
 	
         if (int ret = is_valid_ipv4_pkt(ipv4_hdr, pkt->pkt_len) < 0) {
             LOG_DEBUG_3("invalid ipv4 packet. error code: %d\n", ret);
-            return;
+            return NULL;
         }
 
         v4_pkt = alloc_v4_packet_info();
@@ -288,7 +288,7 @@ void handle_protocol_stack(struct rte_mbuf *pkt, int *is_ddos) {
             // inet_ntop(AF_INET, (void*)(&v4_pkt->flow_key.ip_dst), dst_ip, sizeof(dst_ip));
             // LOG_DEBUG("white ip list: src=%s, dst=%s found.\n", src_ip, dst_ip);
             free_v4_packet_info(v4_pkt);
-            return;
+            return NULL;
         }
 
         // quick judge ddos
@@ -309,16 +309,16 @@ void handle_protocol_stack(struct rte_mbuf *pkt, int *is_ddos) {
 
         if (*is_ddos == 1) {
             free_v4_packet_info(v4_pkt);
-            return;
+            return NULL;
         }
-        
-
     } else if (eth_type == RTE_ETHER_TYPE_IPV6) {
         // IPv6 TODO.
         ipv6_hdr = rte_pktmbuf_mtod_offset(pkt, struct rte_ipv6_hdr *,
             sizeof(struct rte_ether_hdr));
+        return NULL;
     } else {
         LOG_DEBUG_3("invalid IP packet.\n");
+        return NULL;
     }
     
     // Handle TCP and UDP
@@ -386,7 +386,6 @@ void handle_protocol_stack(struct rte_mbuf *pkt, int *is_ddos) {
             it_bwd->second->flow_pkt_list.push_back(v4_pkt);
         } else {
             v4_flow_info* flow_item = new v4_flow_info();
-            if (flow_item == NULL) return;
 
             flow_item->flow_pkt_list.push_back(v4_pkt);
             v4_flow_table.insert(
@@ -394,12 +393,12 @@ void handle_protocol_stack(struct rte_mbuf *pkt, int *is_ddos) {
                     flow_hash_key, flow_item));
         }
         pthread_mutex_unlock(&v4_flow_table_lock);
-    }
-    // TODO: IPv6 flow table
-    if (v6_pkt) {
+        return (base_packet_info*)v4_pkt;
+    } else if (v6_pkt) {    // TODO: IPv6 flow table
         print_v6_packet_info(v6_pkt);
+        return (base_packet_info*)v6_pkt;
     }
-    return;
+    return NULL;
 }
 
 void print_v4_flow_table() {

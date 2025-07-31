@@ -61,6 +61,7 @@ public:
     std::string report_json_path;
     int log_level;
     std::unordered_set<uint32_t> ip_white_set;
+    std::vector<std::string> next_hop_table;
 
     configuration_items() : log_level(1) {}
 };
@@ -79,6 +80,9 @@ char* pack_double_type_array(struct array_desc arr_desc, size_t rows, std::vecto
 
 int unpack_double_type_array(char* buf, ssize_t buf_length, std::vector<double>& arr);
 
+/* Load and parse config.json */
 int parse_configuration(const std::string config_path, configuration_items& cfgs);
+
+/* Export traffic analysis report. WebUI will read it. */
 void export_report(const std::string report_json_path, l2capfwd_report* report_ptr);
 #endif

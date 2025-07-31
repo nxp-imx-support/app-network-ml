@@ -118,7 +118,12 @@ int parse_configuration(const std::string config_path, configuration_items& cfgs
         cfgs.ip_white_set.insert(ip_buf);
         LOG_DEBUG("Add to IP white list: %x\n", ip_buf);
     }
-    
+
+    // Get next_hop_table
+    std::vector<std::string> next_hop_table = json_cfgs["next_hop_table"];
+    cfgs.next_hop_table.insert(cfgs.next_hop_table.end(), 
+        next_hop_table.begin(), next_hop_table.end());
+            
     return 0;
 }
 

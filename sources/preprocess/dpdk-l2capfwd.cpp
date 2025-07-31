@@ -44,17 +44,26 @@
 #include <rte_string_fns.h>
 
 #include "extract_protocols.h"
+#include "dpdk-l2capfwd.h"
 #include "utils.h"
 
 static volatile bool force_quit;
 
 static configuration_items* global_cfgs = nullptr;
 
-/* MAC updating disabled by default */
-static int mac_updating = 0;
+/* MAC updating enabled by default */
+static int mac_updating = 1;
+
+/* Next hop mac updating disabled by default */
+static int next_hop_mac_updating_flag = 0;
 
 /* Ports set in promiscuous mode off by default. */
 static int promiscuous_on;
+
+/* Next hop table. Will be initialized when specify --next-hop-mac-updating
+ * If enabled, it will be read by two port-threads.
+ */
+static ArpTable next_hop_table;
 
 #define RTE_LOGTYPE_L2FWD RTE_LOGTYPE_USER1
 
@@ -189,7 +198,7 @@ print_stats(void)
 	}
 }
 
-// This function will not be called. Don't need mac update. just forward pkts.
+/* Deafult mac updating for l2fwd */
 static void
 l2fwd_mac_updating(struct rte_mbuf *m, unsigned dest_portid)
 {
@@ -202,31 +211,28 @@ l2fwd_mac_updating(struct rte_mbuf *m, unsigned dest_portid)
 	tmp = &eth->dst_addr.addr_bytes[0];
 	*((uint64_t *)tmp) = 0x000000000002 + ((uint64_t)dest_portid << 40);
 
-	uint64_t dst_mac = 0;
-	for (int i = 0; i < 6; i++) {
-		dst_mac = dst_mac + ((uint64_t)eth->dst_addr.addr_bytes[i] << (i * 8));
-	}
-	printf("before update:\ndstport: %d, dst_mac: %#lX\n", dest_portid, dst_mac);
-
-	
-	// 8mp: 32:43:a0:63:17:7b
-	// 93A0: 00:04:9f:07:bd:98
-	if (dest_portid == 1) {
-		*((uint64_t *)tmp) = (0x980000000000) + (0xbd00000000) + (0x07 << 24) + (0x9f << 16) + (0x04 << 8) + (0x00 << 0);
-	}
-	if (dest_portid == 0) {
-		*((uint64_t *)tmp) = (0x7b0000000000) + (0x1700000000) + (0x63 << 24) + (0xa0 << 16) + (0x43 << 8) + (0x32 << 0);
-	}
-
-	dst_mac = 0;
-	for (int i = 0; i < 6; i++) {
-		dst_mac = dst_mac + ((uint64_t)eth->dst_addr.addr_bytes[i] << (i * 8));
-	}
-	printf("after update:\ndstport: %d, dst_mac: 0x%016lX\n", dest_portid, dst_mac);
-	printf("tmp: 0x%016lX\n", *((uint64_t *)tmp));
-
 	/* src addr */
 	rte_ether_addr_copy(&l2fwd_ports_eth_addr[dest_portid], &eth->src_addr);
+}
+
+/* Update destination MAC address accroding to next_hop_table, like an ARP table */
+static void next_hop_mac_updating(struct rte_mbuf *m, base_packet_info* pkt_info)
+{
+	struct rte_ether_hdr *eth = rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
+
+	if (pkt_info->ip_type == PROTO_IPV4) {
+		v4_packet_info* v4_pkt = (v4_packet_info*)pkt_info;
+		IPv4Address lookup_ip = v4_pkt->flow_key.ip_dst;
+		const MacAddress* dest_mac = next_hop_table.lookup(lookup_ip);
+		if (dest_mac) {
+			rte_ether_addr tmp_mac;
+			memcpy(tmp_mac.addr_bytes, dest_mac->data(), 6);
+			rte_ether_addr_copy(&tmp_mac, &eth->dst_addr);
+		}
+	} else if (pkt_info->ip_type == PROTO_IPV6) {
+		// TODO
+	}
+	return;
 }
 
 static inline int
@@ -277,11 +283,19 @@ l2fwd_cap_forward(struct rte_mbuf *pkt, unsigned portid) {
 
     // Handle network protocol stack
 	int is_ddos = 0;
-    handle_protocol_stack(pkt, &is_ddos);
+    base_packet_info* base_pkt = handle_protocol_stack(pkt, &is_ddos);
 	if (is_ddos == 1) {
 		rte_pktmbuf_free(pkt);
 	} else {
 		dst_port = l2fwd_dst_ports[portid];
+
+		if (mac_updating)
+			l2fwd_mac_updating(pkt, dst_port);
+
+		// next_hop_mac_updating needs packet's IP address, so we pass base_pkt
+		if (next_hop_mac_updating_flag)
+			next_hop_mac_updating(pkt, base_pkt);
+
 		buffer = tx_buffer[dst_port];
 		sent = rte_eth_tx_buffer(dst_port, 0, buffer, pkt);
 		if (sent)
@@ -545,6 +559,7 @@ static const char short_options[] =
 	;
 
 #define CMD_LINE_OPT_NO_MAC_UPDATING "no-mac-updating"
+#define CMD_LINE_OPT_NEXT_HOP_MAC_UPDATING "next-hop-mac-updating"
 #define CMD_LINE_OPT_PORTMAP_CONFIG "portmap"
 
 enum {
@@ -554,11 +569,13 @@ enum {
 	 * conflict with short options */
 	CMD_LINE_OPT_NO_MAC_UPDATING_NUM = 256,
 	CMD_LINE_OPT_PORTMAP_NUM,
+	CMD_LINE_OPT_NEXT_HOP_MAC_UPDATING_NUM,
 };
 
 static const struct option lgopts[] = {
 	{ CMD_LINE_OPT_NO_MAC_UPDATING, no_argument, 0,
 		CMD_LINE_OPT_NO_MAC_UPDATING_NUM},
+	{ CMD_LINE_OPT_NEXT_HOP_MAC_UPDATING, no_argument, 0, },
 	{ CMD_LINE_OPT_PORTMAP_CONFIG, 1, 0, CMD_LINE_OPT_PORTMAP_NUM},
 	{NULL, 0, 0, 0}
 };
@@ -637,6 +654,10 @@ l2fwd_parse_args(int argc, char **argv)
 
 		case CMD_LINE_OPT_NO_MAC_UPDATING_NUM:
 			mac_updating = 0;
+			break;
+
+		case CMD_LINE_OPT_NEXT_HOP_MAC_UPDATING_NUM:
+			next_hop_mac_updating_flag = 1;
 			break;
 
 		default:
@@ -769,6 +790,20 @@ signal_handler(int signum)
 	}
 }
 
+static int initialize_next_hop_mac_table() {
+	const std::vector<std::string>& nxt_hop_table = global_cfgs->next_hop_table;
+	for (auto it = nxt_hop_table.begin(); it != nxt_hop_table.end(); ++it) {
+		std::istringstream iss(*it);
+		std::string ip_str;
+		std::string mac_str;
+		
+		iss >> ip_str;
+		iss >> mac_str;
+		next_hop_table.add_entry(ip_str, mac_str);
+	}
+	return 0;
+}
+
 int
 dpdk_l2capfwd_main(int argc, char **argv, configuration_items& cfgs)
 {
@@ -806,7 +841,11 @@ dpdk_l2capfwd_main(int argc, char **argv, configuration_items& cfgs)
 		rte_exit(EXIT_FAILURE, "Invalid L2FWD arguments\n");
 	/* >8 End of init EAL. */
 
+	if (next_hop_mac_updating_flag)
+		initialize_next_hop_mac_table();
+	
 	printf("MAC updating %s\n", mac_updating ? "enabled" : "disabled");
+	printf("next hop MAC updating %s\n", next_hop_mac_updating_flag ? "enabled" : "disabled");
 
 	/* convert to number of cycles */
 	timer_period *= rte_get_timer_hz();

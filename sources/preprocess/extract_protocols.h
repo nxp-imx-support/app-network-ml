@@ -58,6 +58,18 @@ const int sample_upper_size = 5000;
 const int attack_threshold = 100;
 
 /**
+ * IP protocol version
+ */
+typedef enum {
+    PROTO_IPV4,
+    PROTO_IPV6
+} proto_type_t;
+
+struct base_packet_info {
+    proto_type_t ip_type;
+};
+
+/**
  * IPv4 flow table key
 */
 union v4_flow_key {
@@ -77,6 +89,7 @@ union v4_flow_key {
  * IPv4 packet information
 */
 struct v4_packet_info {
+    base_packet_info base;
     // five-tuple
     union v4_flow_key flow_key;
     bool is_valid_flow_key;
@@ -137,6 +150,7 @@ union v6_flow_key {
  * IPv6 packet information
 */
 struct v6_packet_info {
+    base_packet_info base;
     // five-tuple
     union v6_flow_key flow_key;
     bool is_valid_flow_key;
@@ -207,11 +221,10 @@ void main_lcore_handle_cleanup();
  * Handle network protocol stack, extract packet information and 5-tuple. Match the packet
  *  to flow table
  * @param pkt: packet from mbuf
- * @param l3ptype: L3 protocol type
- * @param l4ptype: L4 protocol type
- * @retval void
+ * @param is_ddos: Point to quick judemnt result. 0 - normal; 1 - ddos
+ * @retval Point to packet info struct
 */
-void handle_protocol_stack(struct rte_mbuf *pkt, int *is_ddos);
+base_packet_info* handle_protocol_stack(struct rte_mbuf *pkt, int *is_ddos);
 
 /**
  * Startup a new thread. Preprocess flow table and send it to AI inference process via pipe
