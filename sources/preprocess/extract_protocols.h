@@ -212,7 +212,17 @@ public:
 
 // void print_packet_info(struct packet_info* pkt_info);
 
+/** 
+ * Initialize share memory for communicating with AI model
+ * Add white IP list to avoid inference
+ * 
+ * @param ip_list: white IP list from config.json
+*/
 void main_lcore_handle_init(std::unordered_set<uint32_t> &ip_list);
+
+/**
+ * Clean up share memory and semaphore
+ */
 void main_lcore_handle_cleanup();
 
 

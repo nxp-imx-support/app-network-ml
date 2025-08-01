@@ -65,6 +65,9 @@ static int promiscuous_on;
  */
 static ArpTable next_hop_table;
 
+/* Just forward packets and do not send their features to model */
+static int debug_forwarding = 0;
+
 #define RTE_LOGTYPE_L2FWD RTE_LOGTYPE_USER1
 
 #define MAX_PKT_BURST 32
@@ -218,6 +221,12 @@ l2fwd_mac_updating(struct rte_mbuf *m, unsigned dest_portid)
 /* Update destination MAC address accroding to next_hop_table, like an ARP table */
 static void next_hop_mac_updating(struct rte_mbuf *m, base_packet_info* pkt_info)
 {
+	// Filter invalid packets
+	if (pkt_info == NULL) {
+		LOG_DEBUG("Get an invalide packet.");
+		return;
+	}
+
 	struct rte_ether_hdr *eth = rte_pktmbuf_mtod(m, struct rte_ether_hdr *);
 
 	if (pkt_info->ip_type == PROTO_IPV4) {
@@ -228,6 +237,10 @@ static void next_hop_mac_updating(struct rte_mbuf *m, base_packet_info* pkt_info
 			rte_ether_addr tmp_mac;
 			memcpy(tmp_mac.addr_bytes, dest_mac->data(), 6);
 			rte_ether_addr_copy(&tmp_mac, &eth->dst_addr);
+		}
+		// For ICMPv4, do not need anymore. Free it.
+		if (v4_pkt->proto_val == ICMP_PROTOCOL_NUM) {
+			free_v4_packet_info(v4_pkt);
 		}
 	} else if (pkt_info->ip_type == PROTO_IPV6) {
 		// TODO
@@ -327,7 +340,8 @@ l2fwd_main_loop(void)
 
 	if (lcore_id == rte_get_main_lcore()) {
 		LOG_INFO("Start main lcore handle init.\n");
-		main_lcore_handle_init(global_cfgs->ip_white_set);
+		if (!debug_forwarding)
+			main_lcore_handle_init(global_cfgs->ip_white_set);
 	}
 
 	if (qconf->n_rx_port == 0) {
@@ -379,9 +393,12 @@ l2fwd_main_loop(void)
 					/* do this only on main core */
 					if (lcore_id == rte_get_main_lcore()) {
 						print_stats();
-						flow_table_inference(&force_quit, &report_log);
-						// export report log to json file
-						export_report(global_cfgs->report_json_path, &report_log);
+						if (!debug_forwarding) {
+							flow_table_inference(&force_quit, &report_log);
+							// export report log to json file
+							export_report(global_cfgs->report_json_path, &report_log);
+						}
+	
 						/* reset the timer */
 						timer_tsc = 0;
 					}
@@ -415,7 +432,8 @@ l2fwd_main_loop(void)
 	}
 	// Cleanup main lcore
 	if (lcore_id == rte_get_main_lcore()) {
-		main_lcore_handle_cleanup();
+		if (!debug_forwarding)
+			main_lcore_handle_cleanup();
 		// Clean up flow table
 		v4_flow_table_cleanup();
 	}
@@ -443,7 +461,9 @@ l2fwd_usage(const char *prgname)
 	       "       - The destination MAC address is replaced by 02:00:00:00:00:TX_PORT_ID\n"
 	       "  -b NUM: burst size for receive packet (default is 32)\n"
 	       "  --portmap: Configure forwarding port pair mapping\n"
-	       "	      Default: alternate port pairs\n\n",
+	       "	      Default: alternate port pairs\n"
+		   "  --next-hop-mac-updating: using for i.MX943 with DSA configuration, it will read arp rule in config.json\n"
+		   "  --debug-forwarding: test packets forwarding without sending dataset to model\n\n",
 	       prgname);
 }
 
@@ -561,6 +581,7 @@ static const char short_options[] =
 #define CMD_LINE_OPT_NO_MAC_UPDATING "no-mac-updating"
 #define CMD_LINE_OPT_NEXT_HOP_MAC_UPDATING "next-hop-mac-updating"
 #define CMD_LINE_OPT_PORTMAP_CONFIG "portmap"
+#define CMD_LINE_OPT_DEBUG_FORWARDING "debug-forwarding"
 
 enum {
 	/* long options mapped to a short option */
@@ -570,13 +591,15 @@ enum {
 	CMD_LINE_OPT_NO_MAC_UPDATING_NUM = 256,
 	CMD_LINE_OPT_PORTMAP_NUM,
 	CMD_LINE_OPT_NEXT_HOP_MAC_UPDATING_NUM,
+	CMD_LINE_OPT_DEBUG_FORWARDING_NUM,
 };
 
 static const struct option lgopts[] = {
 	{ CMD_LINE_OPT_NO_MAC_UPDATING, no_argument, 0,
 		CMD_LINE_OPT_NO_MAC_UPDATING_NUM},
-	{ CMD_LINE_OPT_NEXT_HOP_MAC_UPDATING, no_argument, 0, },
+	{ CMD_LINE_OPT_NEXT_HOP_MAC_UPDATING, no_argument, 0, CMD_LINE_OPT_NEXT_HOP_MAC_UPDATING_NUM},
 	{ CMD_LINE_OPT_PORTMAP_CONFIG, 1, 0, CMD_LINE_OPT_PORTMAP_NUM},
+	{ CMD_LINE_OPT_DEBUG_FORWARDING, no_argument, 0, CMD_LINE_OPT_DEBUG_FORWARDING_NUM},
 	{NULL, 0, 0, 0}
 };
 
@@ -658,6 +681,10 @@ l2fwd_parse_args(int argc, char **argv)
 
 		case CMD_LINE_OPT_NEXT_HOP_MAC_UPDATING_NUM:
 			next_hop_mac_updating_flag = 1;
+			break;
+
+		case CMD_LINE_OPT_DEBUG_FORWARDING_NUM:
+			debug_forwarding = 1;
 			break;
 
 		default:

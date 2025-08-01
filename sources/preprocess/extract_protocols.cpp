@@ -245,7 +245,7 @@ base_packet_info* handle_protocol_stack(struct rte_mbuf *pkt, int *is_ddos) {
     // print_bytes_hex((char*)eth_hdr, pkt->pkt_len);
     if (is_valid_ether_pkt(eth_hdr, pkt->pkt_len) < 0) {
         // rte_pktmbuf_free(pkt);
-        LOG_DEBUG_3("invalid ehter packet.\n");
+        LOG_DEBUG("invalid ehter packet.\n");
         return NULL;
     }
     pro_ptr = (uint8_t*)eth_hdr;
@@ -262,7 +262,7 @@ base_packet_info* handle_protocol_stack(struct rte_mbuf *pkt, int *is_ddos) {
         ipv4_hdr = (struct rte_ipv4_hdr*)(pro_ptr + sizeof(struct rte_ether_hdr));
 	
         if (int ret = is_valid_ipv4_pkt(ipv4_hdr, pkt->pkt_len) < 0) {
-            LOG_DEBUG_3("invalid ipv4 packet. error code: %d\n", ret);
+            LOG_DEBUG("invalid ipv4 packet. error code: %d\n", ret);
             return NULL;
         }
 
@@ -288,6 +288,7 @@ base_packet_info* handle_protocol_stack(struct rte_mbuf *pkt, int *is_ddos) {
             // inet_ntop(AF_INET, (void*)(&v4_pkt->flow_key.ip_dst), dst_ip, sizeof(dst_ip));
             // LOG_DEBUG("white ip list: src=%s, dst=%s found.\n", src_ip, dst_ip);
             free_v4_packet_info(v4_pkt);
+            LOG_DEBUG("In white ip list");
             return NULL;
         }
 
@@ -315,12 +316,19 @@ base_packet_info* handle_protocol_stack(struct rte_mbuf *pkt, int *is_ddos) {
         // IPv6 TODO.
         ipv6_hdr = rte_pktmbuf_mtod_offset(pkt, struct rte_ipv6_hdr *,
             sizeof(struct rte_ether_hdr));
+        LOG_DEBUG("Coming an IPv6 packet");
         return NULL;
     } else {
-        LOG_DEBUG_3("invalid IP packet.\n");
+        // Unexpect packet protocol
+        LOG_DEBUG("invalid IP packet.\n");
         return NULL;
     }
     
+    // Handle ICMP
+    if (v4_pkt && v4_pkt->proto_val == ICMP_PROTOCOL_NUM) {
+        return (struct base_packet_info*)v4_pkt;
+    }
+
     // Handle TCP and UDP
     struct rte_tcp_hdr *tcp_hdr = NULL;
     struct rte_udp_hdr *udp_hdr = NULL;
@@ -351,9 +359,6 @@ base_packet_info* handle_protocol_stack(struct rte_mbuf *pkt, int *is_ddos) {
     if (v6_pkt && v6_pkt->proto_val == UDP_PROTOCOL_NUM) {
 
     }
-
-    // Handle ICMP
-    // TODO
 
     // Handle higher layer
     if (v4_pkt && v4_pkt->is_valid_flow_key && v4_pkt->flow_key.port_dst == 443) {
@@ -398,6 +403,8 @@ base_packet_info* handle_protocol_stack(struct rte_mbuf *pkt, int *is_ddos) {
         print_v6_packet_info(v6_pkt);
         return (base_packet_info*)v6_pkt;
     }
+    // Unexpect to run here.
+    LOG_DEBUG("Unexpect to run here. Unknow protocol");
     return NULL;
 }
 
