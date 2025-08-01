@@ -2,4 +2,3 @@ dpkt
 numpy
 scikit-learn
 h5py
-tensorflow

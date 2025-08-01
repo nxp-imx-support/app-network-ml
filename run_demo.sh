@@ -2,9 +2,14 @@
 # Copyright 2024 NXP
 # SPDX-License-Identifier: BSD-3-Clause
 
+# TODO : Add pip dependency checking: Flask, posix_ipc
+
 export LD_LIBRARY_PATH=.:$LD_LIBRARY_PATH
 
-SUPPORT_PLATFORMS=("imx95evk" "imx93evk")
+PLAT_IMX93EVK="imx93evk"
+PLAT_IMX95EVK="imx95evk"
+PLAT_IMX943OB="imx943ob"
+SUPPORT_PLATFORMS=("imx95evk" "imx93evk" "imx943ob")
 USE_NPU=false
 L2CAPFWD_APP="./l2capfwd"
 MODEL_APP_DIR="./model"
@@ -96,6 +101,36 @@ config_imx93_dpdk() {
     return $?
 }
 
+config_imx943_dpdk() {
+    if ! lsmod | grep -q kpage_ncache; then
+        echo "Loading kpage_ncache.ko."
+        modprobe kpage_ncache || return 1
+    fi
+
+    ip link add name br0 type bridge
+    ip link set dev swp0 master br0
+    ip link set dev swp1 master br0
+    ip link set dev br0 up
+    ip link set dev swp0 up
+    ip link set dev swp1 up
+
+    echo 2 > /sys/bus/pci/devices/0000:00:00.0/sriov_numvfs
+
+    sleep 5
+
+    ip link set eth3 down
+    ip link set eth4 down
+
+    sleep 5
+
+    dpdk-devbind.py -b uio_pci_generic 0000:00:08.0
+    dpdk-devbind.py -b uio_pci_generic 0000:00:10.0
+
+    ip link set eth0 vf 0 trust on
+    ip link set eth0 vf 1 trust on
+    return 0
+}
+
 build_model_imx93() {
     local original_dir=$PWD
     MODEL_NAME="LUCID-ddos-CIC2019-quant-int8_vela.tflite"
@@ -122,6 +157,10 @@ build_model_imx95() {
     return 1
 }
 
+build_model_imx943() {
+    return 1
+}
+
 execute_demo_loop() {
     local hostname=$1
     local original_dir=$PWD
@@ -133,8 +172,10 @@ execute_demo_loop() {
     local l2cap_args
     if [[ $hostname == "imx93evk" ]]; then
         l2cap_args="-c 0x3 -n 2 --vdev net_enetqos --vdev net_enetfec -- -p 0x3 -P -T 5 --no-mac-updating"
-    else
+    elif [[ $hostname == "imx95evk" ]]; then
         l2cap_args="-c 0x3 -n 2 -- -p 0x3 -P -T 5 --no-mac-updating"
+    elif [[ $hostname == "imx943ob" ]]; then
+        l2cap_args="-c 0x3 -n 1 -- -p 0x3 -T 5 --next-hop-mac-updating"
     fi
 
     echo "${L2CAPFWD_APP} ${l2cap_args}"
@@ -149,8 +190,15 @@ execute_demo_loop() {
     local infer_cmd
     if $USE_NPU; then
         case $hostname in
-            "imx93evk") lib="/usr/lib/libethosu_delegate.so" ;;
-            "imx95evk") lib="/usr/lib/libneutron_delegate.so" ;;
+            "imx93evk") 
+                lib="/usr/lib/libethosu_delegate.so" 
+                ;;
+            "imx95evk") 
+                lib="/usr/lib/libneutron_delegate.so" 
+                ;;
+            "imx943ob") 
+                lib="/usr/lib/libneutron_delegate.so" 
+                ;;
         esac
         infer_cmd="python3 $MODEL_APP --model $MODEL_NAME -e $lib"
     else
@@ -209,6 +257,7 @@ main() {
     fi
 
     local config_status=0
+    # Have checked if the host locates at SUPPORT_PLATFORMS
     case $host_name in
         "imx95evk")
             config_imx95_dpdk || config_status=1
@@ -222,9 +271,20 @@ main() {
                 build_model_imx93 || config_status=1
             fi
             ;;
+        "imx943ob")
+            config_imx943_dpdk || config_status=1
+            
+            if $USE_NPU && (( config_status == 0)); then
+                build_model_imx943 || config_status=1
+            fi
+            ;;
     esac
-
-    (( config_status == 0 )) && execute_demo_loop "$host_name" || echo "Configuration error!"
+    echo "config_status: $config_status"
+    if (( config_status == 0 )); then
+        execute_demo_loop "$host_name" 
+    else
+        echo "Configuration error!"
+    fi
 }
 
 main "$@"

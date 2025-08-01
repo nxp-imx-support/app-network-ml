@@ -4,14 +4,14 @@
 #
 # Copy files to specified path to facilitate deployment on the board.
 
-PLATFORM="i.MX95"
+PLATFORM="i.MX943"
 echo "Target platform is ${PLATFORM}"
 
 # Modify this path if you need
-DST_DIR="~/Board_bak/${PLATFORM}/imx-ddb"
+DST_DIR=~/Board_bak/${PLATFORM}/imx-ddb
 echo "Dest path:${DST_DIR}"
 
-if [ ! -d ${DST_DIR} ]; then
+if [ ! -d $(realpath ${DST_DIR}) ]; then
   echo "You need to create this folder manually: ${DST_DIR}"
   exit
 fi
@@ -33,7 +33,6 @@ cp sources/ipc/libshmanager.so ${DST_DIR}
 cp sources/model/model_inference_main.py ${DST_DIR}/model
 cp -r sources/webui/* ${DST_DIR}/webui/
 cp output/LUCID-ddos-CIC2019-quant-int8.tflite ${DST_DIR}/model
-cp run_demo.py ${DST_DIR}
+# cp run_demo.py ${DST_DIR}
 cp run_demo.sh ${DST_DIR}
-cp sources/deploy/* ${DST_DIR}
 echo "Finish."
