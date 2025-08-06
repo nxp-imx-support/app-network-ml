@@ -1,8 +1,11 @@
-/*
- * Copyright 2024 NXP
- * SPDX-License-Identifier: BSD-3-Clause
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2010-2016 Intel Corporation
+ * Copyright(c) 2025 NXP
  * 
- * Forward L2 packets while delivering eth packet to parse it.
+ * File:	dpdk-l2capfwd.cpp
+ * Brief:	This file enhances dpdk-l2fwd application, including
+ * 			packet capture, a new mac updating option and IPC 
+ * 			with other process
  */
 
 #include <stdio.h>

@@ -1,10 +1,10 @@
-/*
- * Copyright 2024 NXP
- * SPDX-License-Identifier: BSD-3-Clause
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2025 NXP
  * 
- * Parse L2/L3/L4 protocol header.
- * Feature extraction for ML model.
- * Implement IPC between this process and model inference process.
+ * File:	extract_protocols.cpp
+ * Brief:	Parse L2/L3/L4 protocol header.
+ *          Feature extraction for ML model.
+ *          Implement IPC between this process and model inference process.
  */
 
 #include <arpa/inet.h>

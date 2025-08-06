@@ -1,12 +1,15 @@
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2025 NXP
+ * 
+ * File:	utils.h
+ * Brief:	Head file of utils.cpp
+ */
+
 #ifndef _L2CAPFWD_UTILS_HDR
 #define _L2CAPFWD_UTILS_HDR
 #include <vector>
 #include <stdint.h>
 #include <sys/types.h>
-/*
- * Copyright 2024 NXP
- * SPDX-License-Identifier: BSD-3-Clause
- */
 
 #include <string>
 #include <fstream>

@@ -1,6 +1,8 @@
-/*
- * Copyright 2024 NXP
- * SPDX-License-Identifier: BSD-3-Clause
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2025 NXP
+ * 
+ * File:	main.cpp
+ * Brief:	Execution entry
  */
 
 #include "dpdk-l2capfwd.h"

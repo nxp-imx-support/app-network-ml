@@ -1,6 +1,8 @@
-/*
- * Copyright 2024 NXP
- * SPDX-License-Identifier: BSD-3-Clause
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2025 NXP
+ * 
+ * File:	extract_protocols.h
+ * Brief:	Head file of extract_protocols.cpp
  */
 
 #ifndef _EXTRACT_PRO_HDR
