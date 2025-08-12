@@ -44,15 +44,15 @@ endif
 endif
 
 
-build/$(APP): $(SRCS-y) Makefile $(PC_FILE) $(SRC-h) | build
+build/$(APP): $(SRCS-y) $(PC_FILE) $(SRC-h) | build
 	$(CC) $(CFLAGS) $(SRCS-y) -I $(INCLUDE_PATH) -L $(LIB_PATH) -lshmanager -o $@ $(LDFLAGS) $(LDFLAGS_STATIC)
 	cp ./preprocess/config.json ./build/
 	cp ./ipc/libshmanager.so ./build/
 
-build/test: $(SRCS-test) Makefile $(SRC-h) | build
+build/test: $(SRCS-test) $(SRC-h) | build
 	$(CC) $(CFLAGS) $(SRCS-test) -o $@ $(LDFLAGS) $(LDFLAGS_STATIC)
 
-build/$(APP)-debug: $(SRCS-y) Makefile $(PC_FILE) $(SRC-h) | build
+build/$(APP)-debug: $(SRCS-y) $(PC_FILE) $(SRC-h) | build
 	$(CC) $(CFLAGS) -g $(SRCS-y) -I $(INCLUDE_PATH) -L $(LIB_PATH) -lshmanager -o $@ $(LDFLAGS) $(LDFLAGS_STATIC)
 	cp ./preprocess/config.json ./build/
 	cp ./ipc/libshmanager.so ./build/
