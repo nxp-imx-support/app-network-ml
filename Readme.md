@@ -7,6 +7,7 @@
 [![Language badge](https://img.shields.io/badge/Language-C++-yellow)]()
 [![Board badge](https://img.shields.io/badge/Board-MCIMX93&ndash;EVK-blue)]()
 [![Board badge](https://img.shields.io/badge/Board-IMX95LPD5EVK&ndash;19-blue)]()
+[![Board badge](https://img.shields.io/badge/Board-IMX943LPD5OB2&ndash;19-blue)]()
 [![Category badge](https://img.shields.io/badge/Category-NETWORKING-yellowgreen)](https://mcuxpresso.nxp.com/appcodehub?category=networking)
 [![Category badge](https://img.shields.io/badge/Category-AI/ML-yellowgreen)](https://mcuxpresso.nxp.com/appcodehub?category=aiml)
 

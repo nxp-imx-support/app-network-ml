@@ -118,6 +118,11 @@ config_imx943_dpdk() {
 
     sleep 5
 
+    local eth3_mac=$(ip link show eth3 | grep -oE 'link/ether ([0-9a-f]{2}:){5}[0-9a-f]{2}' | awk '{print $2}')
+    echo -e "\033[32mDPDK port0 MAC address: ${eth3_mac}\033[0m"
+    local eth4_mac=$(ip link show eth4 | grep -oE 'link/ether ([0-9a-f]{2}:){5}[0-9a-f]{2}' | awk '{print $2}')
+    echo -e "\033[32mDPDK port1 MAC address: ${eth4_mac}\033[0m"
+
     ip link set eth3 down
     ip link set eth4 down
 
@@ -215,7 +220,7 @@ execute_demo_loop() {
     python3 $WEBUI_APP > debug.log 2>&1 &
     PIDS["webui"]=$!
     echo "webui pid: ${PIDS[webui]}"
-    echo "*****WebUI listen on $(get_host_ip):5000*****"
+    echo -e "\033[32m*****WebUI listen on $(get_host_ip):5000*****\033[0m"
     echo "Ctrl C to exit"
 
     cd "$original_dir" || return

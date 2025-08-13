@@ -1,5 +1,6 @@
 .vscode/
 output/*
+board_deploy
 tf2_16/*
 imxddb-env/*
 # sample-dataset/*
