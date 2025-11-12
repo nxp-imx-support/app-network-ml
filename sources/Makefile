@@ -45,15 +45,15 @@ endif
 
 
 build/$(APP): $(SRCS-y) $(PC_FILE) $(SRC-h) | build
-	$(CC) $(CFLAGS) $(SRCS-y) -I $(INCLUDE_PATH) -L $(LIB_PATH) -lshmanager -o $@ $(LDFLAGS) $(LDFLAGS_STATIC)
+	$(CXX) $(CFLAGS) $(SRCS-y) -I $(INCLUDE_PATH) -L $(LIB_PATH) -lshmanager -o $@ $(LDFLAGS) $(LDFLAGS_STATIC)
 	cp ./preprocess/config.json ./build/
 	cp ./ipc/libshmanager.so ./build/
 
 build/test: $(SRCS-test) $(SRC-h) | build
-	$(CC) $(CFLAGS) $(SRCS-test) -o $@ $(LDFLAGS) $(LDFLAGS_STATIC)
+	$(CXX) $(CFLAGS) $(SRCS-test) -o $@ $(LDFLAGS) $(LDFLAGS_STATIC)
 
 build/$(APP)-debug: $(SRCS-y) $(PC_FILE) $(SRC-h) | build
-	$(CC) $(CFLAGS) -g $(SRCS-y) -I $(INCLUDE_PATH) -L $(LIB_PATH) -lshmanager -o $@ $(LDFLAGS) $(LDFLAGS_STATIC)
+	$(CXX) $(CFLAGS) -g $(SRCS-y) -I $(INCLUDE_PATH) -L $(LIB_PATH) -lshmanager -o $@ $(LDFLAGS) $(LDFLAGS_STATIC)
 	cp ./preprocess/config.json ./build/
 	cp ./ipc/libshmanager.so ./build/
 
