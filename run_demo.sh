@@ -8,8 +8,8 @@ export LD_LIBRARY_PATH=.:$LD_LIBRARY_PATH
 
 PLAT_IMX93EVK="imx93evk"
 PLAT_IMX95EVK="imx95evk"
-PLAT_IMX943OB="imx943ob"
-SUPPORT_PLATFORMS=("imx95evk" "imx93evk" "imx943ob")
+PLAT_IMX943OB="imx943-orangebox"
+SUPPORT_PLATFORMS=("${PLAT_IMX95EVK}" "${PLAT_IMX93EVK}" "${PLAT_IMX943OB}")
 USE_NPU=false
 L2CAPFWD_APP="./l2capfwd"
 MODEL_APP_DIR="./model"
@@ -107,6 +107,11 @@ config_imx943_dpdk() {
         modprobe kpage_ncache || return 1
     fi
 
+    if [[ $(ip link show br0 2>/dev/null) != "" ]]; then
+        echo "VF has already configured, skip."
+        return 0
+    fi
+
     ip link add name br0 type bridge
     ip link set dev swp0 master br0
     ip link set dev swp1 master br0
@@ -175,11 +180,11 @@ execute_demo_loop() {
     echo "Start l2capfwd process"
     
     local l2cap_args
-    if [[ $hostname == "imx93evk" ]]; then
+    if [[ $hostname == "${PLAT_IMX93EVK}" ]]; then
         l2cap_args="-c 0x3 -n 2 --vdev net_enetqos --vdev net_enetfec -- -p 0x3 -P -T 5 --no-mac-updating"
-    elif [[ $hostname == "imx95evk" ]]; then
+    elif [[ $hostname == "${PLAT_IMX95EVK}" ]]; then
         l2cap_args="-c 0x3 -n 2 -- -p 0x3 -P -T 5 --no-mac-updating"
-    elif [[ $hostname == "imx943ob" ]]; then
+    elif [[ $hostname == "${PLAT_IMX943OB}" ]]; then
         l2cap_args="-c 0x3 -n 1 -- -p 0x3 -T 5 --next-hop-mac-updating"
     fi
 
@@ -195,13 +200,13 @@ execute_demo_loop() {
     local infer_cmd
     if $USE_NPU; then
         case $hostname in
-            "imx93evk") 
+            "${PLAT_IMX93EVK}") 
                 lib="/usr/lib/libethosu_delegate.so" 
                 ;;
-            "imx95evk") 
+            "${PLAT_IMX95EVK}") 
                 lib="/usr/lib/libneutron_delegate.so" 
                 ;;
-            "imx943ob") 
+            "${PLAT_IMX943OB}") 
                 lib="/usr/lib/libneutron_delegate.so" 
                 ;;
         esac
@@ -246,7 +251,7 @@ execute_demo_loop() {
     # Check return codes
     for proc in "${!PIDS[@]}"; do
         # Return code checking would need special handling as we can't retrieve after wait
-        echo "Check $proc logs for errors"
+        echo "Runtime log in $proc"
     done
 
     echo "All exit."
@@ -264,25 +269,28 @@ main() {
     local config_status=0
     # Have checked if the host locates at SUPPORT_PLATFORMS
     case $host_name in
-        "imx95evk")
+        "${PLAT_IMX95EVK}")
             config_imx95_dpdk || config_status=1
             if $USE_NPU && (( config_status == 0 )); then
                 build_model_imx95 || config_status=1
             fi
             ;;
-        "imx93evk")
+        "${PLAT_IMX93EVK}")
             config_imx93_dpdk || config_status=1 
             if $USE_NPU && (( config_status == 0 )); then
                 build_model_imx93 || config_status=1
             fi
             ;;
-        "imx943ob")
+        "${PLAT_IMX943OB}")
             config_imx943_dpdk || config_status=1
             
             if $USE_NPU && (( config_status == 0)); then
                 build_model_imx943 || config_status=1
             fi
             ;;
+        *)
+            echo "[INFO] Unsupported platform."
+            return 1
     esac
     echo "config_status: $config_status"
     if (( config_status == 0 )); then
