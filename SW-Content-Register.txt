@@ -1,16 +1,16 @@
 NXP Software Content Register
 
-Release - 0.0.1
-Dec 2024
+Release - 0.1.0
+Dec 2025
 
 Outgoing License: LA_OPT_Online Code Hosting NXP_Software_License - v1.2 October 2023
 License File:     LICENSE
 
 --------------------------------------------
 
-Package:                   imx-ddb-0.0.1
-Version:                   0.0.1
-Date:                      Dec 2024
+Package:                   imx-ddb-0.1.0
+Version:                   0.1.0
+Date:                      Dec 2025
 Outgoing License:          LA_OPT_Online Code Hosting NXP_Software_License - v1.2 October 2023 
 License File:              LICENSE
 Package Category:          Demo application

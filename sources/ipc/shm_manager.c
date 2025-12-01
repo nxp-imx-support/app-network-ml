@@ -1,3 +1,7 @@
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2025 NXP
+ */
+
 #include <stdio.h>
 #include <string.h>
 #include <sys/ipc.h>

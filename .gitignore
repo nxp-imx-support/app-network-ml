@@ -2,14 +2,9 @@
 board_deploy
 tf2_16/*
 imxddb-env/*
-# sample-dataset/*
 **/build
 **/tmp_log.txt
 memo.txt
-
-# !output/.gitkeep
-# !sample-dataset/.gitkeep
-
 **/__pycache__/*
 **/test_tmp
 *.pyc

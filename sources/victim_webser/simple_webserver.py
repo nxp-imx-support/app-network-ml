@@ -4,7 +4,6 @@
 # 
 
 from http.server import HTTPServer, BaseHTTPRequestHandler
-import json
 
 data = {"result": "Hello"}
 host = ("0.0.0.0", 8080)

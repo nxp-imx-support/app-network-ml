@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright 2024 NXP
+# Copyright 2025 NXP
 # SPDX-License-Identifier: BSD-3-Clause
 
 # TODO : Add pip dependency checking: Flask, posix_ipc

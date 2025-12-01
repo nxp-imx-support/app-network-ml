@@ -1,4 +1,6 @@
 #!/bin/bash
+# Copyright 2025 NXP
+# SPDX-License-Identifier: BSD-3-Clause
 
 # output file name
 LOG_FILE="system_usage.csv"
