@@ -7,6 +7,8 @@
 from flask import Flask, render_template, jsonify
 import json
 import signal
+import subprocess
+import socket
 
 SER_HOST = "0.0.0.0"
 SER_PORT = 5000
@@ -14,6 +16,18 @@ L2FWDCAP_REPORT = "../l2capfwd_report.json"
 INFERENCE_REPORT = "../model/model_infer_report.json"
 
 app = Flask(__name__)
+
+def get_host_ip(iface):
+    result = subprocess.run(
+        ["ip", "-4", "addr", "show", iface],
+        capture_output=True,
+        text=True,
+        check=True
+    )
+    for line in result.stdout.split('\n'):
+        if "inet " in line:
+            return line.strip().split()[1].split('/')[0]
+    return ""
 
 def signal_handler(signum, frame):
     if signum == signal.SIGINT or signum == signal.SIGTERM:
@@ -56,4 +70,11 @@ def get_status_json():
 if __name__ == '__main__':
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
+    hostname = socket.gethostname()
+    if hostname == "imx943-orangebox":
+        ip_addr = get_host_ip("swp2")
+        if ip_addr != "":
+            SER_HOST = ip_addr
+        else:
+            print("[WARN] Cannot obtain the swp2 IP address, will use default 0.0.0.0")
     app.run(debug=False, port=SER_PORT, host=SER_HOST)
