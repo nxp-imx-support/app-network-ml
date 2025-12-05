@@ -4,9 +4,20 @@
 # 
 
 from http.server import HTTPServer, BaseHTTPRequestHandler
+import subprocess
+import socket
 
-data = {"result": "Hello"}
-host = ("0.0.0.0", 8080)
+def get_host_ip(iface):
+    result = subprocess.run(
+        ["ip", "-4", "addr", "show", iface],
+        capture_output=True,
+        text=True,
+        check=True
+    )
+    for line in result.stdout.split('\n'):
+        if "inet " in line:
+            return line.strip().split()[1].split('/')[0]
+    return ""
 
 class Request(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -19,7 +30,15 @@ class Request(BaseHTTPRequestHandler):
         self.wfile.write(html_res)
 
 if __name__ == '__main__':
+    host = ("0.0.0.0", 8080)
+    hostname = socket.gethostname()
+    if hostname == "imx943-orangebox":
+        ip_addr = get_host_ip("eth1")
+        if ip_addr != "":
+            host = (ip_addr, 8080)
+        else:
+            print("[WARN] Cannot obtain the eth1 IP address, will use default 0.0.0.0")
     server = HTTPServer(host, Request)
-    print("Starting server, listen at: {}:{}".format(host[0], host[1]))
+    print("Starting server, listen at: http://{}:{}".format(host[0], host[1]))
     server.serve_forever()
 
