@@ -143,7 +143,7 @@ def main(argv):
         model.evaluate(X_test, Y_test)
 
         model_save_path = os.path.join(OUTPUT_FOLDER, model_name)
-        model.save(model_save_path)
+        # model.save(model_save_path)
 
         # another save method for eval Keras model
         model.save(model_save_path + ".keras")

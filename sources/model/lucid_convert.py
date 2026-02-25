@@ -40,8 +40,8 @@ def get_representative_dataset_gen():
 
 
 def tf_model_to_tflite(model):
-
-    converter = tf.lite.TFLiteConverter.from_saved_model(model)
+    model_keras = tf.keras.models.load_model(model)
+    converter = tf.lite.TFLiteConverter.from_keras_model(model_keras)
 
     converter.optimizations = [tf.lite.Optimize.DEFAULT]
     converter.representative_dataset = get_representative_dataset_gen

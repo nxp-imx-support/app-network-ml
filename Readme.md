@@ -59,10 +59,10 @@ This documentation can guide you to install miniconda on your Linux server: http
 
 Once you have completed the installation, you can create a new env and install required Python packages by running:
 ```
-conda create -n imx-ddb python=3.9
+conda create -n imx-ddb python=3.13
 conda activate imx-ddb
 
-pip3 install -r sources/model/requirements.txt
+pip3 install -r sources/requirements-for-pc.txt
 ```
 
 
@@ -82,7 +82,8 @@ python3 lucid_cnn.py -t ../../sample-dataset -e 200
 ### Convert TF model to TFlite
 Execute the following command to quantize the model, which can let it run in the TFlite on the board.
 ```
-python3 lucid_convert.py ../../output/LUCID-ddos-CIC2019.h5 ../../output/LUCID-ddos-CIC2019-quant-int8.tflite ../../sample-dataset/dataset_train.hdf5
+python3 lucid_convert.py ../../output/LUCID-ddos-CIC2019.keras ../../output/LUCID-ddos-CIC2019-quant-int8.tflite ../../
+sample-dataset/dataset_train.hdf5
 ```
 
 ### Make l2capfwd
@@ -127,7 +128,7 @@ u-boot> boot
 
 When first running it on default Linux BSP, you should install Flask, a lightweight WSGI web application framework for Python, to support for WebUI.
 ```bash
-pip install Flask==3.1.0
+pip3 install -r sources/requirements-for-board.txt
 ```
 
 #### Start up imx-ddb
