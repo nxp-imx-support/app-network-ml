@@ -82,8 +82,7 @@ python3 lucid_cnn.py -t ../../sample-dataset -e 200
 ### Convert TF model to TFlite
 Execute the following command to quantize the model, which can let it run in the TFlite on the board.
 ```
-python3 lucid_convert.py ../../output/LUCID-ddos-CIC2019.keras ../../output/LUCID-ddos-CIC2019-quant-int8.tflite ../../
-sample-dataset/dataset_train.hdf5
+python3 lucid_convert.py ../../output/LUCID-ddos-CIC2019.keras ../../output/LUCID-ddos-CIC2019-quant-int8.tflite ../../sample-dataset/dataset_train.hdf5
 ```
 
 ### Make l2capfwd

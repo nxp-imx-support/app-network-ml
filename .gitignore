@@ -9,3 +9,4 @@ memo.txt
 **/test_tmp
 *.pyc
 *.o
+*.log

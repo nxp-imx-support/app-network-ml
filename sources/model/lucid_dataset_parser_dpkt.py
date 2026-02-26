@@ -300,7 +300,7 @@ def transfer_to_feature(flow, feature_list):
                 pkt_idx += 1
                 continue
             f_val_arr = normalize_packet(pkt)
-            f_val_arr[0] = diff
+            f_val_arr[0] = (feature_value_range[0][1] - diff) / (feature_value_range[0][1] - feature_value_range[0][0])
             time_win.append(f_val_arr)
             pkt_seq += 1
         pkt_idx += 1

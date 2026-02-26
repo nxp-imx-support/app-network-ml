@@ -30,7 +30,8 @@ SHM_SIZE = 5 * 1024 * 1024
 UINT64_SIZE = 8
 DOUBLE_SIZE = 8
 TIME_WIN_SIZE = 10
-BATCH_SIZE = 512
+# i.MX943 NPU only supports BATCH_SIZE = 1
+BATCH_SIZE = 1
 # 1 second
 time_period = 1
 inference_no = 1
@@ -81,6 +82,16 @@ def pack_double_type_array(array_desc, arr):
         ret += struct.pack(fmt_str, arr[col_idx])
     return ret
 
+def quantify_float_to_int8(data, scale, zero_point):
+    ret_data = data.astype(np.float32)
+    ret_data = np.round(ret_data / scale + zero_point)
+    ret_data = np.clip(ret_data, -128, 127).astype(np.int8)
+    return ret_data
+
+def inverse_quant_int8_to_float(data, scale, zero_point):
+    ret_data = (data.astype(np.float32) - zero_point) * scale
+    return ret_data
+
 def model_predict(args, x_data):
     global inference_no
     global report_log
@@ -110,6 +121,18 @@ def model_predict(args, x_data):
     model = tflite.Interpreter(model_path=model_path, experimental_delegates=ext_dele)
     input_desc = model.get_input_details()[0]
     output_desc = model.get_output_details()[0]
+
+    log_info("Model name: {}".format(os.path.basename(model_path)))
+    log_info(f"Input dtype: {input_desc['dtype']}")
+    log_info(f"Input quantization: scale={input_desc['quantization'][0]}, zero_point={input_desc['quantization'][1]}")
+    log_info(f"Output dtype: {output_desc['dtype']}")
+    log_info(f"Output quantization: scale={output_desc['quantization'][0]}, zero_point={output_desc['quantization'][1]}")
+
+    input_scale = input_desc['quantization'][0]
+    input_zero_point = input_desc['quantization'][1]
+    output_scale = output_desc['quantization'][0]
+    output_zero_point = output_desc['quantization'][1]
+
     if BATCH_SIZE > 1:
         model.resize_tensor_input(input_desc['index'], [BATCH_SIZE, x_data.shape[1], x_data.shape[2], x_data.shape[3]])
     model.allocate_tensors()
@@ -127,13 +150,16 @@ def model_predict(args, x_data):
         padding_vector = np.zeros((padding_num, x_data.shape[1], x_data.shape[2], x_data.shape[3]))
         x_data = np.concatenate((x_data, padding_vector), axis=0)
         for b in range(batchs):
-            input_data = x_data[batch_offset:batch_offset+BATCH_SIZE].astype(input_desc["dtype"])
+            input_data = x_data[batch_offset:batch_offset+BATCH_SIZE]
+            input_data = quantify_float_to_int8(input_data, input_scale, input_zero_point)
             batch_offset += BATCH_SIZE
+            print("debug in batch")
             model.set_tensor(input_desc['index'], input_data)
             model.invoke()
-            out_list = model.get_tensor(output_desc['index'])
-            log_debug("out_list shape: {}".format(out_list.shape))
-            for tmp in out_list:
+            output_list = model.get_tensor(output_desc['index'])
+            output_list = inverse_quant_int8_to_float(output_list, output_scale, output_zero_point)
+            log_debug("output_list shape: {}".format(output_list.shape))
+            for tmp in output_list:
                 if tmp[0] >= 0.5:
                     Y_pred.append(1.0)
                 else:
@@ -143,11 +169,14 @@ def model_predict(args, x_data):
     # Single input
     else:
         for vec in x_data:
-            input_data = np.expand_dims(vec, axis=0).astype(input_desc["dtype"])
+            input_data = np.expand_dims(vec, axis=0)
+            input_data = quantify_float_to_int8(input_data, input_scale, input_zero_point)
             model.set_tensor(input_desc['index'], input_data)
             model.invoke()
-            tmp = np.squeeze(model.get_tensor(output_desc['index']))
-            Y_pred.append(1.0 if tmp >= 0.5 else 0.0)
+            output = model.get_tensor(output_desc['index'])
+            output = inverse_quant_int8_to_float(output, output_scale, output_zero_point)
+            output = np.squeeze(output)
+            Y_pred.append(1.0 if output >= 0.5 else 0.0)
 
     Y_pred = np.array(Y_pred)
     # log_file.close()
