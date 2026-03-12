@@ -7,18 +7,18 @@ This document describes how to build this prject for OrangeBox2.0 board.
 This project depends on DPDK. The DPDK SDK should be built first.
 
 ```bash
-mkdir ~/Software/SDK/dpdk-22.11-imx943-sdk
+sudo apt update
+sudo apt install meson
 
-# Set up cross-compliation env. CROSS_PATH points to your toolchain path
-export CROSS_PATH=~/Software/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/bin
-export PATH=$PATH:$CROSS_PATH
-export CC=aarch64-none-linux-gnu-g++
-export GCC=aarch64-none-linux-gnu-gcc
+mkdir ~/SDK/dpdk-22.11-imx943-sdk
+
+# Set up cross-compliation env using Yocto toolchain
+source <path-to-toolchain>/environment-setup-armv8a-poky-linux
 
 git clone https://github.com/nxp-qoriq/dpdk.git
 cd dpdk
 
-meson setup arm64-build --cross-file config/arm/arm64_imx_linux_gnu_gcc -Dprefix=~/Software/SDK/dpdk-22.11-imx943-sdk
+meson setup arm64-build --cross-file config/arm/arm64_imx_poky_linux_gcc -Dprefix=~/SDK/dpdk-22.11-imx943-sdk
 cd arm64-build
 meson compile
 meson install
@@ -30,14 +30,12 @@ Switch to this project folder.
 cd imx-ddos-blocker/sources
 ```
 
-Please check the path in `env_setup_imx943` and modify them as your DPDK SDK and toolchain path.
+Modify PKG_CONFIG according to your DPDK SDK path.
 ```
-export DPDK_PKG_PATH=~/Software/SDK/dpdk-22.11-imx943-sdk/lib/pkgconfig
-...
-export CROSS_PATH=~/Software/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64-none-linux-gnu/bin
+export DPDK_PKG_PATH=~/SDK/dpdk-22.11-imx943-sdk/lib/pkgconfig
+export PKG_CONFIG_PATH=$DPDK_PKG_PATH:$PKG_CONFIG_PATH
 ```
 
-If the path is correct, run `source env_setup_imx943`.
 Make project:
 ```
 make
