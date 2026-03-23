@@ -1,54 +1,35 @@
 #!/bin/bash
-# Copyright 2024 NXP
+# Copyright 2025 NXP
 # SPDX-License-Identifier: BSD-3-Clause
-#
-# Copy files to specified path to facilitate deployment on the board.
 
-# Modify this path if you need
 DST_DIR=board_deploy
 IMXDDB_DEPLOY_DIR=${DST_DIR}/imx-ddb
-VICTIM_DEPLOY_DIR=${DST_DIR}/victim_webser
-echo "Dest path:${DST_DIR}"
 
-if [ ! -d $(realpath ${DST_DIR}) ]; then
-  echo "Creating the deploy folder: ${DST_DIR}"
-  mkdir $DST_DIR
-else
-  rm -r ${DST_DIR}/*
-fi
+echo "Creating deployment package..."
 
-if [ ! -d ${IMXDDB_DEPLOY_DIR} ]; then
-  echo "Craeting ${IMXDDB_DEPLOY_DIR}"
-  mkdir ${IMXDDB_DEPLOY_DIR}
-fi
+rm -rf ${DST_DIR}
+mkdir -p ${IMXDDB_DEPLOY_DIR}/model
+mkdir -p ${IMXDDB_DEPLOY_DIR}/webui
 
-if [ ! -d ${VICTIM_DEPLOY_DIR} ]; then
-  echo "Craeting ${VICTIM_DEPLOY_DIR}"
-  mkdir ${VICTIM_DEPLOY_DIR}
-fi
+echo "Copying XDP programs..."
+cp sources/build/xdp_forward_kern.o ${IMXDDB_DEPLOY_DIR}/
+cp sources/build/xdp_controller ${IMXDDB_DEPLOY_DIR}/
+cp sources/build/libsocketmanager.so ${IMXDDB_DEPLOY_DIR}/
 
-if [ ! -d "${IMXDDB_DEPLOY_DIR}/model" ]; then
-  echo "Creating model folder"
-  mkdir ${IMXDDB_DEPLOY_DIR}/model
-fi
+echo "Copying Python inference code..."
+cp sources/model/model_inference_main_refactored.py ${IMXDDB_DEPLOY_DIR}/model/
+cp sources/model/socket_ipc.py ${IMXDDB_DEPLOY_DIR}/model/
+cp sources/model/feature_converter.py ${IMXDDB_DEPLOY_DIR}/model/
+cp sources/model/board_inference.py ${IMXDDB_DEPLOY_DIR}/model/
 
-if [ ! -d "${IMXDDB_DEPLOY_DIR}/webui" ]; then
-  echo "Create Web UI folder"
-  mkdir ${IMXDDB_DEPLOY_DIR}/webui
-fi
+echo "Copying models..."
+cp output/LUCID-ddos-CIC2019-quant-int8.tflite ${IMXDDB_DEPLOY_DIR}/model/
 
-echo "Copy executable programs and models"
-cp sources/build/l2capfwd ${IMXDDB_DEPLOY_DIR}
-cp sources/build/config.json ${IMXDDB_DEPLOY_DIR}
-cp sources/ipc/libshmanager.so ${IMXDDB_DEPLOY_DIR}
-cp sources/model/model_inference_main.py ${IMXDDB_DEPLOY_DIR}/model
+echo "Copying WebUI..."
 cp -r sources/webui/* ${IMXDDB_DEPLOY_DIR}/webui/
-cp output/LUCID-ddos-CIC2019-quant-int8.tflite ${IMXDDB_DEPLOY_DIR}/model
-# cp run_demo.py ${IMXDDB_DEPLOY_DIR}
-cp run_demo.sh ${IMXDDB_DEPLOY_DIR}
-cp sources/requirements-for-board.txt ${IMXDDB_DEPLOY_DIR}
 
-echo "Copy victim web server"
-cp -r sources/victim_webser/* ${VICTIM_DEPLOY_DIR}
+echo "Copying scripts..."
+cp run_demo.sh ${IMXDDB_DEPLOY_DIR}/
+cp sources/requirements-for-board.txt ${IMXDDB_DEPLOY_DIR}/
 
-echo "Finish."
+echo "Done. Deploy with: scp -r ${IMXDDB_DEPLOY_DIR} root@<board_ip>:/home/root/"
