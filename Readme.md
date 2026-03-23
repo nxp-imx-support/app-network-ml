@@ -45,10 +45,10 @@ The following hardware should be prepared for this demo:
 - Network cables (at least 2)
 
 For i.MX93, the connection situation is shown in the figure:
-![imx93-hw](imxddb-imx93-HW.png)
+![imx93-hw](doc/imxddb-imx93-HW.png)
 
 For i.MX95, the connection situation is shown in the figure:
-![imx95-hw](imxddb-imx95-HW.png)
+![imx95-hw](doc/imxddb-imx95-HW.png)
 
 ## 3. Setup<a name="step3"></a>
 ### Linux host setup

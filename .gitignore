@@ -14,3 +14,5 @@ memo.txt
 CLAUDE.md
 SW-requirements.md
 architecture.png
+*.tflite
+*.keras
