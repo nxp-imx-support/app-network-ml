@@ -9,4 +9,8 @@ memo.txt
 **/test_tmp
 *.pyc
 *.o
+*.hdf5
 *.log
+CLAUDE.md
+SW-requirements.md
+architecture.png
