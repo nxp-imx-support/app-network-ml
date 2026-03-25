@@ -12,6 +12,7 @@ memo.txt
 *.hdf5
 *.log
 CLAUDE.md
+AGENTS.md
 SW-requirements.md
 architecture.png
 *.tflite
