@@ -2,8 +2,8 @@
 # Copyright 2026 NXP
 # SPDX-License-Identifier: BSD-3-Clause
 #
-# DEPRECATED: This file references an incomplete inference_pool design.
-# Use detector_main.py instead which implements ModelInferencePool.
+# DEPRECATED: This file references an incomplete design and non-existent imports.
+# Use detector_main.py instead.
 
 import argparse
 import signal
