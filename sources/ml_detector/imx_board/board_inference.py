@@ -38,8 +38,6 @@ class BaseBoardModel(ABC):
         """Run inference with TFLite model"""
         ext_dele = [tflite.load_delegate(self.ext_delegate, self.ext_opt)] if self.ext_delegate else None
 
-        x_data = x_data.reshape(self.input_shape)
-
         interpreter = tflite.Interpreter(
             model_path=self.model_path,
             experimental_delegates=ext_dele
@@ -214,15 +212,38 @@ class LucidCNNBoardModel(BaseBoardModel):
         for flow in ready_flows:
             self._append_flow(flow.flow_id, flow.packets)
         ret_x_data = np.array(self.x_data, dtype=np.float32)
+        ret_x_data = ret_x_data.reshape(self.input_shape)
         ret_x_label = np.array(self.x_label, dtype=np.int32)
 
         return ret_x_data, ret_x_label
 
-    def postprocess(self, prediction):
-        """Interpret LUCID CNN output: binary classification"""
-        is_attack = int(prediction[0] >= 0.5)
-        confidence = int(abs(prediction[0] - 0.5) * 200)
-        return is_attack, confidence
+    def postprocess(self, prediction, label_array):
+        """
+        Interpret LUCID CNN output for multiple flows: binary classification per flow
+        Args:
+            prediction: 1D np.array of attack probabilities
+            label_array: 1D np.array of flow_ids corresponding to each prediction
+        Returns:
+            List of (is_attack, confidence) tuples, one per unique flow_id
+        """
+        unique_flow_ids = np.unique(label_array)
+        results = []
+
+        for flow_id in unique_flow_ids:
+            flow_mask = label_array == flow_id
+            flow_predictions = prediction[flow_mask]
+
+            attack_count = np.sum(flow_predictions >= 0.5)
+            total_count = len(flow_predictions)
+
+            is_attack = int(attack_count > total_count / 2)
+
+            avg_pred = np.mean(flow_predictions)
+            confidence = int(abs(avg_pred - 0.5) * 200)
+
+            results.append((is_attack, confidence))
+
+        return results
 
 
 class SimpleDNNBoardModel(BaseBoardModel):
