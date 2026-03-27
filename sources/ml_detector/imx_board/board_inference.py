@@ -4,7 +4,6 @@
 
 import numpy as np
 import os
-import struct
 from util_functions import PROTOCOL_NUM, normalize_num
 import tflite_runtime.interpreter as tflite
 from abc import ABC, abstractmethod
@@ -27,8 +26,8 @@ class BaseBoardModel(ABC):
         self.input_shape = input_shape
         self.ext_delegate = ext_delegate
         self.ext_opt = ext_opt
-        self.x_data = []
-        self.x_label = []
+        self.x_data = list()
+        self.x_label = list()
 
     @abstractmethod
     def preprocess(self, ready_flows):
@@ -77,16 +76,16 @@ class BaseBoardModel(ABC):
 
     def detect(self, flows):
         """Full detection pipeline: preprocess -> predict -> postprocess"""
-        x_data, x_label = self.preprocess(flows)
-        y_pred = self.predict(x_data)
-        return self.postprocess(y_pred, x_label)
+        x_array, label_array = self.preprocess(flows)
+        y_pred = self.predict(x_array)
+        return self.postprocess(y_pred, label_array)
 
 
 class LucidCNNBoardModel(BaseBoardModel):
     """LUCID CNN model for board-side inference (2D CNN, input_shape=(10, 11, 1))"""
 
-    def __init__(self, model_path, window_size=10):
-        super().__init__(model_path)
+    def __init__(self, model_path, input_shape, window_size=10):
+        super().__init__(model_path, input_shape)
         self.window_size = window_size
         self.feature_value_range = [
             [0, 10],
@@ -214,8 +213,10 @@ class LucidCNNBoardModel(BaseBoardModel):
         
         for flow in ready_flows:
             self._append_flow(flow.flow_id, flow.packets)
+        ret_x_data = np.array(self.x_data, dtype=np.float32)
+        ret_x_label = np.array(self.x_label, dtype=np.int32)
 
-        return self.x_data, self.x_label
+        return ret_x_data, ret_x_label
 
     def postprocess(self, prediction):
         """Interpret LUCID CNN output: binary classification"""
