@@ -5,10 +5,11 @@
 import numpy as np
 import os
 import struct
+from util_functions import PROTOCOL_NUM, normalize_num
 import tflite_runtime.interpreter as tflite
 from abc import ABC, abstractmethod
 
-# Model status retured to caller
+# TODO: Model status retured to caller
 class ModelRetStatus:
     # With a valid detection result
     M_STAT_OK = 0x00
@@ -18,47 +19,25 @@ class ModelRetStatus:
 class BaseBoardModel(ABC):
     """Abstract base class for board-side TFLite models"""
 
-    def __init__(self, model_path, input_shape):
+    def __init__(self, model_path, input_shape, ext_delegate=None, ext_opt=None):
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"Model not found: {model_path}")
         self.model_path = model_path
         self.model_name = os.path.basename(model_path)
         self.input_shape = input_shape
-        self._interpreter = None
-        self._input_desc = None
-        self._output_desc = None
-
-    def _packet_features_to_array(self, packets):
-        """Convert list of PacketFeature to numpy array (11 features per packet)"""
-        features_list = []
-        for packet in packets[-self.window_size:]:
-            features = np.zeros(11, dtype=np.float32)
-            features[0] = packet.protocol_type
-            features[1] = packet.src_ip
-            features[2] = packet.dst_ip
-            features[3] = packet.transmission_type
-            features[4] = packet.src_port
-            features[5] = packet.dst_port
-            features[6] = packet.packet_size
-            features[7] = packet.tcp_flags
-            features[8] = int.from_bytes(packet.src_mac[:4], 'big')
-            features[9] = int.from_bytes(packet.dst_mac[:4], 'big')
-            features[10] = packet.timestamp & 0xFFFFFFFF
-            features_list.append(features)
-
-        while len(features_list) < self.window_size:
-            features_list.insert(0, np.zeros(11, dtype=np.float32))
-
-        return np.array(features_list, dtype=np.float32)
+        self.ext_delegate = ext_delegate
+        self.ext_opt = ext_opt
+        self.x_data = []
+        self.x_label = []
 
     @abstractmethod
-    def preprocess(self, packet_buffer):
+    def preprocess(self, ready_flows):
         """Convert packet buffer to model input tensor"""
         pass
 
-    def predict(self, x_data, ext_delegate=None, ext_opt=None):
+    def predict(self, x_data):
         """Run inference with TFLite model"""
-        ext_dele = [tflite.load_delegate(ext_delegate, ext_opt)] if ext_delegate else None
+        ext_dele = [tflite.load_delegate(self.ext_delegate, self.ext_opt)] if self.ext_delegate else None
 
         x_data = x_data.reshape(self.input_shape)
 
@@ -96,27 +75,147 @@ class BaseBoardModel(ABC):
         """Interpret prediction -> (is_attack: int, confidence: int)"""
         pass
 
-    def detect(self, packet_buffer):
+    def detect(self, flows):
         """Full detection pipeline: preprocess -> predict -> postprocess"""
-        x_data = self.preprocess(packet_buffer)
-        prediction = self.predict(x_data)
-        return self.postprocess(prediction)
+        x_data, x_label = self.preprocess(flows)
+        y_pred = self.predict(x_data)
+        return self.postprocess(y_pred, x_label)
 
 
 class LucidCNNBoardModel(BaseBoardModel):
     """LUCID CNN model for board-side inference (2D CNN, input_shape=(10, 11, 1))"""
 
     def __init__(self, model_path, window_size=10):
-        super().__init__(model_path, window_size)
+        super().__init__(model_path)
+        self.window_size = window_size
+        self.feature_value_range = [
+            [0, 10],
+            [0, 0xFFFF],
+            [0, 0x0F],
+            [0, 0xFFFF],
+            [0, 0xFFFF],
+            [0, 0xFFFF],
+            [0, 0xFFFFFFFF],
+            [0, 0xFFFF],
+            [0, 0xFFFF],
+            [0, 0xFFFF],
+            [0, 0xFF]
+        ]
+    
+    def _packet_features_to_array(self, pre_packet, packet):
+        """
+        Convert packet object to a feature array of shape (11,)
+        """
 
-    @property
-    def input_shape(self):
-        return (self.window_size, 11, 1)
+        features = np.zeros(11, dtype=np.float32)
+        ts_diff = packet.timestamp - pre_packet.timestamp
+        features[0] = normalize_num(ts_diff, 
+                                    self.feature_value_range[0][0], self.feature_value_range[0][1])
+        features[1] = normalize_num(packet.l2_length, 
+                                    self.feature_value_range[1][0], self.feature_value_range[1][1])
+        features[2] = normalize_num(packet.ip_flags, 
+                                    self.feature_value_range[2][0], self.feature_value_range[2][1])
+        features[3] = normalize_num(packet.l4_type, 
+                                    self.feature_value_range[3][0], self.feature_value_range[3][1])            # Highest layer
+        features[4] = normalize_num(packet.l3_type + packet.l4_type, 
+                                    self.feature_value_range[4][0], self.feature_value_range[4][1])  # IP protocol
 
-    def preprocess(self, packet_buffer):
-        """Prepare time window for LUCID model: reshape to (window_size, 11, 1)"""
-        features = self._packet_features_to_array(packet_buffer)
-        return features.reshape(1, self.window_size, 11, 1)
+        # TCP len
+        if packet.l4_type == PROTOCOL_NUM.PROTOCOL_TCP:
+            features[5] = normalize_num(packet.l4_length,
+                                        self.feature_value_range[5][0], self.feature_value_range[5][1])
+
+        features[6] = normalize_num(packet.tcp_ack,
+                                    self.feature_value_range[6][0], self.feature_value_range[6][1])        # tcp_ack
+        features[7] = normalize_num(packet.tcp_flags,
+                                    self.feature_value_range[7][0], self.feature_value_range[7][1])
+        features[8] = normalize_num(packet.tcp_win,
+                                    self.feature_value_range[8][0], self.feature_value_range[8][1])
+
+        # UDP len
+        if packet.l4_type == PROTOCOL_NUM.PROTOCOL_UDP:
+            features[9] = normalize_num(packet.l4_length,
+                                        self.feature_value_range[9][0], self.feature_value_range[9][1])
+        
+        features[10] = normalize_num(packet.icmp_type,
+                                     self.feature_value_range[10][0], self.feature_value_range[10][1])
+        return features
+
+    def _cut_flow_to_slices(self, packets):
+        pkt_num = len(packets)
+        if pkt_num == 0:
+            return []
+        
+        pkt_seq = 0
+        pkt_idx = 0
+        now = 0
+        start_ts = packets[0].timestamp
+        flow_slices = list()
+        time_win = list()
+        win_time_period = 10    # 10 second time window
+
+        while pkt_idx < pkt_num:
+            # if pkt_idx % 20 == 0:
+            #     print("In transfer_to_feature, pkt_idx: {}".format(pkt_idx))
+            pkt = packets[pkt_idx]
+            now = pkt.timestamp
+            diff = now - start_ts
+
+            # Require a new time window.
+            if diff - win_time_period > 1e-6:
+                # Padding last window
+                while pkt_seq < self.window_size:
+                    time_win.append(None)
+                    pkt_seq += 1
+                flow_slices.append(time_win)
+                # New time window
+                time_win = list()
+                pkt_seq = 0
+                start_ts = pkt.timestamp
+                pkt_seq += 1
+                time_win.append(pkt)
+            else:
+                # When a time window is full, do not push new packets until the diff > win_time_period
+                if pkt_seq >= self.window_size:
+                    pkt_idx += 1
+                    continue
+                time_win.append(pkt)
+                pkt_seq += 1
+            pkt_idx += 1
+
+        # padding the last one
+        while pkt_seq < self.window_size:
+            time_win.append(None)
+            pkt_seq += 1
+        flow_slices.append(time_win)
+        # Expect the shape (slice_cnt, 10)
+        return flow_slices
+
+    def _append_flow(self, flow_id, packets):
+        flow_slices = self._cut_flow_to_slices(packets)
+        for slice_item in flow_slices:
+            slice_feature_vector = list()
+            for idx, pkt in enumerate(slice_item):
+                if pkt is None:
+                    pkt_feature_vector = np.zeros(11, dtype=np.float32)
+                else:
+                    if idx == 0:
+                        pre_pkt = pkt
+                    pkt_feature_vector = self._packet_features_to_array(pre_pkt, pkt)
+                    pre_pkt = pkt
+                slice_feature_vector.append(pkt_feature_vector)
+            self.x_data.append(slice_feature_vector)
+            self.x_label.append(flow_id)
+        return
+
+    def preprocess(self, ready_flows):
+        self.x_data.clear()
+        self.x_label.clear()
+        
+        for flow in ready_flows:
+            self._append_flow(flow.flow_id, flow.packets)
+
+        return self.x_data, self.x_label
 
     def postprocess(self, prediction):
         """Interpret LUCID CNN output: binary classification"""
@@ -129,16 +228,16 @@ class SimpleDNNBoardModel(BaseBoardModel):
     """Simple DNN model for board-side inference (flattened input, input_shape=(110,))"""
 
     def __init__(self, model_path, window_size=10):
-        super().__init__(model_path, window_size)
+        super().__init__(model_path)
+        self.window_size = window_size
 
     @property
     def input_shape(self):
         return (self.window_size * 11,)
 
-    def preprocess(self, packet_buffer):
+    def preprocess(self, ready_flows):
         """Prepare flattened input for Simple DNN: reshape to (110,)"""
-        features = self._packet_features_to_array(packet_buffer)
-        return features.reshape(1, self.window_size * 11)
+        pass
 
     def postprocess(self, prediction):
         """Interpret Simple DNN output: binary classification (same threshold as LUCID)"""
@@ -173,15 +272,10 @@ class ModelInferencePool:
             raise RuntimeError("No active model set. Call set_active() first.")
         return self._models[self._active_name]
 
-    def detect(self, packet_buffer):
+    def detect(self, flows):
         """Run full detection pipeline on active model"""
         model = self.get_active_model()
-        return model.detect(packet_buffer)
-
-    def predict(self, x_data, ext_delegate=None, ext_opt=None):
-        """Run inference on the active model (raw output)"""
-        model = self.get_active_model()
-        return model.predict(x_data, ext_delegate, ext_opt)
+        return model.detect(flows)
 
     def list_models(self):
         """Return list of registered model names"""

@@ -8,6 +8,15 @@ import glob
 import h5py
 import numpy as np
 
+class PROTOCOL_NUM:
+    PROTOCOL_ICMP = 1
+    PROTOCOL_TCP = 6
+    PROTOCOL_UDP = 17
+    PROTOCOL_IPv4 = 2048
+
+def normalize_num(x, x_min, x_max):
+    return (x - x_min) / (x_max - x_min) if (x_max - x_min) != 0 else 0.0
+
 def calculate_metrics(y_true, y_pred):
     """Calculate accuracy, precision, recall and F1 score using numpy"""
     y_true = np.array(y_true).flatten()

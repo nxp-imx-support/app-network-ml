@@ -12,29 +12,46 @@ class TLVMessage:
     HEADER_SIZE = 6
 
 class PacketFeature:
-    FORMAT = '<Q6s6sHIIBHHHBH'  # 40 bytes
-    SIZE = 40
+    FORMAT = '<Q6s6sHI'  # 26B
+    FORMAT += 'IIBBI'    # 14B
+    FORMAT += 'HHHBI'    # 11B
+    FORMAT += '13s'      # 13B PAD
+    SIZE = 64            # 51 + 13(PAD)
 
     def __init__(self, timestamp=0, src_mac=b'\x00'*6, dst_mac=b'\x00'*6,
-                 protocol_type=0, src_ip=0, dst_ip=0, transmission_type=0,
-                 src_port=0, dst_port=0, packet_size=0, tcp_flags=0):
+                 l3_type=0, l2_length=0, src_ip=0, dst_ip=0, ip_flags=0, l4_type=0,
+                 l3_length=0, src_port=0, dst_port=0, tcp_flags=0, tcp_ack=0, 
+                 tcp_win=0, icmp_type=0, l4_length=0):
+        # TODO: Need to check the type of timestamp
         self.timestamp = timestamp
+        # Layer2 
         self.src_mac = src_mac
         self.dst_mac = dst_mac
-        self.protocol_type = protocol_type
+        self.l3_type = l3_type
+        self.l2_length = l2_length
+
+        # Layer3
         self.src_ip = src_ip
         self.dst_ip = dst_ip
-        self.transmission_type = transmission_type
+        self.ip_flags = ip_flags
+        self.l4_type = l4_type
+        self.l3_length = l3_length
+
+        # Layer4
         self.src_port = src_port
         self.dst_port = dst_port
-        self.packet_size = packet_size
         self.tcp_flags = tcp_flags
+        self.tcp_ack = tcp_ack
+        self.tcp_win = tcp_win
+        self.icmp_type = icmp_type
+        self.l4_length = l4_length
 
     def to_bytes(self):
         return struct.pack(self.FORMAT, self.timestamp, self.src_mac, self.dst_mac,
-                          self.protocol_type, self.src_ip, self.dst_ip,
-                          self.transmission_type, self.src_port, self.dst_port,
-                          self.packet_size, self.tcp_flags, 0)
+                          self.l3_type, self.l2_length, self.src_ip, self.dst_ip, 
+                          self.ip_flags, self.l4_type, self.l3_length, self.src_port, 
+                          self.dst_port, self.tcp_flags, self.tcp_ack, self.tcp_win, 
+                          self.icmp_type, self.l4_length, b'\x00')
 
     @classmethod
     def parse(cls, data):
@@ -65,19 +82,25 @@ class SocketIPC:
         self.socket_path = socket_path
         self.sock = None
 
-    def connect(self):
+    def connect(self, timeout=None):
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.settimeout(timeout)
         self.sock.connect(self.socket_path)
 
     def send_tlv(self, msg_type, data):
         header = struct.pack(TLVMessage.HEADER_FORMAT, msg_type, len(data))
         self.sock.sendall(header + data)
 
-    def recv_tlv(self):
-        header = self._recv_exact(TLVMessage.HEADER_SIZE)
-        msg_type, length = struct.unpack(TLVMessage.HEADER_FORMAT, header)
-        data = self._recv_exact(length) if length > 0 else b''
-        return msg_type, data
+    def recv_tlv(self, timeout=None):
+        if timeout is not None:
+            self.sock.settimeout(timeout)
+        try:
+            header = self._recv_exact(TLVMessage.HEADER_SIZE)
+            msg_type, length = struct.unpack(TLVMessage.HEADER_FORMAT, header)
+            data = self._recv_exact(length) if length > 0 else b''
+            return msg_type, data
+        except socket.timeout:
+            return None, None
 
     def _recv_exact(self, n):
         data = b''
@@ -91,8 +114,10 @@ class SocketIPC:
     def send_detection_result(self, result):
         self.send_tlv(TLVMessage.MSG_TYPE_DETECTION_RESULT, result.to_bytes())
 
-    def recv_packet_feature(self):
-        msg_type, data = self.recv_tlv()
+    def recv_packet_feature(self, timeout=None):
+        msg_type, data = self.recv_tlv(timeout)
+        if msg_type is None:
+            return None
         if msg_type != TLVMessage.MSG_TYPE_PACKET_FEATURES:
             raise ValueError(f"Expected packet feature, got type {msg_type}")
         return PacketFeature.parse(data)
