@@ -4,11 +4,33 @@
 
 import argparse
 import signal
+import time
 import logging
-from collections import deque
+import multiprocessing as mp
+import tomllib
+import os
+from multiprocessing import Queue
+from socket_ipc import SocketIPC, DetectionResult, ResultEntry
+from sources.ml_detector.imx_board.flow_entry import FlowEntry
+from inference_worker import run_inference_worker
 
-from socket_ipc import SocketIPC, DetectionResult
-from board_inference import ModelInferencePool, LucidCNNBoardModel, SimpleDNNBoardModel
+_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "detector.toml")
+with open(_CONFIG_PATH, "rb") as f:
+    _CONFIG = tomllib.load(f)
+
+DEFAULT_SOCKET_PATH = _CONFIG["default"]["socket_path"]
+INFERENCE_INTERVAL = _CONFIG["default"]["inference_interval"]
+PACKET_TIMEOUT = _CONFIG["default"]["packet_timeout"]
+IPC_TIMEOUT = _CONFIG["default"]["ipc_timeout"]
+MAX_BATCH_SIZE = _CONFIG["default"]["max_batch_size"]
+
+MODEL_CONFIGS = {
+    name: {
+        "path": cfg["path"],
+        "input_shape": tuple(cfg["input_shape"]),
+    }
+    for name, cfg in _CONFIG["models"].items()
+}
 
 logging.basicConfig(
     level=logging.INFO,
@@ -16,45 +38,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-DEFAULT_SOCKET_PATH = "/tmp/imx_ddb.socket"
-
-MODEL_CONFIGS = {
-    "lucid_cnn": {
-        "class": LucidCNNBoardModel,
-        "path": "output/LUCID-ddos-CIC2019-quant-int8.tflite",
-        "window_size": 10,
-    },
-    "simple_dnn": {
-        "class": SimpleDNNBoardModel,
-        "path": "output/simple-dnn-quant-int8.tflite",
-        "window_size": 10,
-    },
-}
-
 
 class DDoSDetector:
-    def __init__(self, socket_path, model_name):
+    def __init__(self, socket_path, model_name, ext_delegate=None):
         self.socket_path = socket_path
         self.model_name = model_name
+        self.ext_delegate = ext_delegate
         self.running = False
-        self.window_size = MODEL_CONFIGS[model_name]["window_size"]
+
+        config = MODEL_CONFIGS[model_name]
+        self.model_path = config["path"]
+        self.input_shape = config["input_shape"]
 
         self.ipc = SocketIPC(socket_path)
-        self.model_pool = ModelInferencePool()
+        self.flow_table = list()
+        self.flow_id_num = 0
 
-        self._setup_models()
+        self._proc = None
+        self._result_queue = Queue()
+
         self._setup_signal_handlers()
-
-    def _setup_models(self):
-        for name, config in MODEL_CONFIGS.items():
-            self.model_pool.register(
-                name,
-                config["class"],
-                config["path"],
-                window_size=config["window_size"]
-            )
-        self.model_pool.set_active(self.model_name)
-        logger.info("Active model: %s", self.model_name)
 
     def _setup_signal_handlers(self):
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -64,40 +67,132 @@ class DDoSDetector:
         logger.info("Received signal %d, shutting down...", signum)
         self.running = False
 
+    def _update_flow_table(self, pkt):
+        # Make flow key
+        pkt_flow_key = None
+        if pkt.src_port > pkt.dst_port:
+            pkt_flow_key = (pkt.l4_type, pkt.dst_ip, pkt.dst_port, pkt.src_ip, pkt.src_port)
+        elif pkt.src_port == pkt.dst_port and pkt.src_ip > pkt.dst_ip:
+            pkt_flow_key = (pkt.l4_type, pkt.dst_ip, pkt.dst_port, pkt.src_ip, pkt.src_port)
+        else:
+            pkt_flow_key = (pkt.l4_type, pkt.src_ip, pkt.src_port, pkt.dst_ip, pkt.dst_port)
+        
+        new_flow = True
+        for flow_entry in self.flow_table:
+            if flow_entry.flow_key == pkt_flow_key:
+                flow_entry.packets.append(pkt)
+                new_flow = False
+                break
+        
+        if new_flow:
+            self.flow_table.append(FlowEntry(self.flow_id_num, pkt_flow_key, pkt))
+            self.flow_id_num += 1
+
+    def _lookup_flow_tuple_by_flow_id(self, flow_id):
+        for flow_entry in self.flow_table:
+            if flow_entry.flow_id == flow_id:
+                return flow_entry
+        return None
+
+    def _get_ready_flow(self):
+        cur_ts = time.time()
+        ready_flows = list()
+        for flow_entry in self.flow_table:
+            if flow_entry.is_ready and cur_ts - flow_entry.first_packet_ts >= PACKET_TIMEOUT:
+                ready_flows.append(flow_entry)
+                flow_entry.is_ready = False
+        return ready_flows
+
     def run(self):
         self.ipc.connect()
         logger.info("Connected to socket: %s", self.socket_path)
+        logger.info("Model: %s (%s)", self.model_name, self.model_path)
 
-        packet_buffer = deque(maxlen=self.window_size)
         self.running = True
-        flow_id = 0
+        last_inference_time = time.time()
 
         while self.running:
-            try:
-                packet = self.ipc.recv_packet_feature()
-                packet_buffer.append(packet)
+            self._reap_completed_proc()
+            self._process_incoming_packets()
 
-                if len(packet_buffer) >= self.window_size:
-                    is_attack, confidence = self.model_pool.detect(packet_buffer)
+            if time.time() - last_inference_time >= INFERENCE_INTERVAL:
+                if self._proc is None:
+                    self._trigger_inference()
+                    last_inference_time = time.time()
+                else:
+                    logger.info("Skipping inference, previous not complete")
 
-                    result = DetectionResult(
-                        timestamp=packet.timestamp,
-                        is_attack=is_attack,
-                        confidence=confidence,
-                        flow_id=flow_id
-                    )
-                    self.ipc.send_detection_result(result)
-                    flow_id += 1
-
-            except ConnectionError as e:
-                logger.error("Connection error: %s", e)
-                break
-            except Exception as e:
-                logger.error("Error during inference: %s", e)
-                continue
-
-        self.ipc.close()
+        self._cleanup()
         logger.info("Detector stopped")
+
+    def _reap_completed_proc(self):
+        """Reap completed inference process"""
+        if self._proc is None:
+            return
+
+        if not self._proc.is_alive():
+            self._proc.join()
+            self._proc = None
+            detect_ret = DetectionResult()
+            if not self._result_queue.empty():
+                result_array = self._result_queue.get()
+                if len(result_array) == 0:
+                    logger.warning("Empty result array from inference")
+                    return
+                
+                for item in result_array:
+                    flow_id = item[0]
+                    is_attack = item[1]
+                    confidence = item[2]
+                    flow_key = self._lookup_flow_tuple_by_flow_id(flow_id)
+                    if flow_key is not None:
+                        detect_ret.append_new_ret_entry(ResultEntry(flow_key[0], flow_key[1], 
+                                                                    flow_key[2], flow_key[3],
+                                                                    flow_key[4], is_attack, confidence))
+                    else:
+                        logger.warning("Flow ID %d not found in flow table", flow_id)
+
+            self.ipc.send_detection_result(detect_ret)
+
+    def _process_incoming_packets(self):
+        """Receive packets and update flow table"""
+        try:
+            packet = self.ipc.recv_packet_feature(timeout=IPC_TIMEOUT)
+            if packet is None:
+                return
+            self._update_flow_table(packet)
+        except ConnectionError as e:
+            logger.error("Connection error: %s", e)
+            self.running = False
+        except Exception as e:
+            logger.error("Error processing packet: %s", e)
+
+    def _trigger_inference(self):
+        """Collect ready flows and spawn inference subprocess"""
+        ready_flows = self._get_ready_flows()
+
+        if len(ready_flows) == 0:
+            logger.debug("No ready flows for inference")
+            return
+
+        logger.info("Starting inference for %d flows", len(ready_flows))
+
+        self._proc = mp.Process(
+            target=run_inference_worker,
+            args=(self.model_name, self.model_path, self.input_shape, self._result_queue)
+        )
+        self._proc.start()
+
+    def _cleanup(self):
+        """Cleanup resources before exit"""
+        if self._proc is not None and self._proc.is_alive():
+            self._proc.terminate()
+            self._proc.join()
+
+        try:
+            self.ipc.close()
+        except Exception:
+            pass
 
 
 def main():
@@ -115,15 +210,21 @@ def main():
         default=DEFAULT_SOCKET_PATH,
         help="Unix socket path for IPC with DPDK app"
     )
+    parser.add_argument(
+        "--ext-delegate",
+        type=str,
+        default=None,
+        help="NPU delegate library path (e.g., libethosu.so)"
+    )
 
     args = parser.parse_args()
 
     detector = DDoSDetector(
         socket_path=args.socket_path,
-        model_name=args.model
+        model_name=args.model,
+        ext_delegate=args.ext_delegate
     )
     detector.run()
-
 
 if __name__ == "__main__":
     main()

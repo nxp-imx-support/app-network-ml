@@ -5,9 +5,8 @@ import socket
 import struct
 
 class TLVMessage:
-    MSG_TYPE_PACKET_FEATURES = 0x01
-    MSG_TYPE_DETECTION_RESULT = 0x02
-    MSG_TYPE_HEARTBEAT = 0x03
+    MSG_PKT = 0x01
+    MSG_RET = 0x02
     HEADER_FORMAT = '<HI'  # uint16_t type, uint32_t length
     HEADER_SIZE = 6
 
@@ -59,23 +58,34 @@ class PacketFeature:
         return cls(*unpacked[:-1])  # Exclude padding
 
 class DetectionResult:
-    FORMAT = '<QBBHI'  # 16 bytes
-    SIZE = 16
+    def __init__(self):
+        self.ret_size = 0
+        self.ret_array: ResultEntry = list()
 
-    def __init__(self, timestamp=0, is_attack=0, confidence=0, flow_id=0):
-        self.timestamp = timestamp
-        self.is_attack = is_attack
-        self.confidence = confidence
-        self.flow_id = flow_id
+    def append_new_ret_entry(self, ret_entry):
+        self.ret_array.append(ret_entry)
+        self.ret_size += 1
 
     def to_bytes(self):
-        return struct.pack(self.FORMAT, self.timestamp, self.is_attack,
-                          self.confidence, 0, self.flow_id)
+        bytes_data = b''
+        bytes_data += struct.pack('<I', self.ret_size)
+        for entry in self.ret_array:
+            bytes_data += struct.pack(entry.FORMAT, entry.src_ip, entry.src_port,
+                                     entry.dst_ip, entry.dst_port, entry.protocol,
+                                     entry.is_attack, entry.confidence)
+        return bytes_data
 
-    @classmethod
-    def parse(cls, data):
-        unpacked = struct.unpack(cls.FORMAT, data)
-        return cls(unpacked[0], unpacked[1], unpacked[2], unpacked[4])
+class ResultEntry:
+    FORMAT = '<BIHIHII'
+    SIZE = 21
+    def __init__(self, protocol, src_ip, src_port, dst_ip, dst_port, is_attack, confidence):
+        self.protocol = protocol
+        self.src_ip = src_ip
+        self.src_port = src_port
+        self.dst_ip = dst_ip
+        self.dst_port = dst_port
+        self.is_attack = is_attack
+        self.confidence = confidence
 
 class SocketIPC:
     def __init__(self, socket_path):
@@ -112,7 +122,7 @@ class SocketIPC:
         return data
 
     def send_detection_result(self, result):
-        self.send_tlv(TLVMessage.MSG_TYPE_DETECTION_RESULT, result.to_bytes())
+        self.send_tlv(TLVMessage.MSG_RET, result.to_bytes())
 
     def recv_packet_feature(self, timeout=None):
         msg_type, data = self.recv_tlv(timeout)

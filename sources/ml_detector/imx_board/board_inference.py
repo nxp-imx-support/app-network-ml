@@ -241,7 +241,7 @@ class LucidCNNBoardModel(BaseBoardModel):
             avg_pred = np.mean(flow_predictions)
             confidence = int(abs(avg_pred - 0.5) * 200)
 
-            results.append((is_attack, confidence))
+            results.append((flow_id, is_attack, confidence))
 
         return results
 
@@ -267,38 +267,3 @@ class SimpleDNNBoardModel(BaseBoardModel):
         confidence = int(abs(prediction[0] - 0.5) * 200)
         return is_attack, confidence
 
-
-class ModelInferencePool:
-    """Manages multiple board models for inference"""
-
-    def __init__(self):
-        self._models = {}
-        self._active_name = None
-
-    def register(self, model_name, model_class, model_path, **kwargs):
-        """Register a board model for inference"""
-        self._models[model_name] = model_class(model_path, **kwargs)
-
-    def set_active(self, model_name):
-        """Set the active model for inference"""
-        if model_name not in self._models:
-            available = list(self._models.keys())
-            raise ValueError(
-                f"Model '{model_name}' not registered. Available: {available}"
-            )
-        self._active_name = model_name
-
-    def get_active_model(self):
-        """Get the currently active model"""
-        if self._active_name is None:
-            raise RuntimeError("No active model set. Call set_active() first.")
-        return self._models[self._active_name]
-
-    def detect(self, flows):
-        """Run full detection pipeline on active model"""
-        model = self.get_active_model()
-        return model.detect(flows)
-
-    def list_models(self):
-        """Return list of registered model names"""
-        return list(self._models.keys())
