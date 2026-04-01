@@ -128,7 +128,7 @@ class SocketIPC:
         msg_type, data = self.recv_tlv(timeout)
         if msg_type is None:
             return None
-        if msg_type != TLVMessage.MSG_TYPE_PACKET_FEATURES:
+        if msg_type != TLVMessage.MSG_PKT:
             raise ValueError(f"Expected packet feature, got type {msg_type}")
         return PacketFeature.parse(data)
 

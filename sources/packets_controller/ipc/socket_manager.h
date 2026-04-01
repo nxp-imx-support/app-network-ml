@@ -5,6 +5,7 @@
 #define SOCKET_MANAGER_H
 
 #include <stdint.h>
+#include "../common/common.h"
 #include "tlv_protocol.h"
 
 // Socket operations
@@ -16,7 +17,6 @@ int accept_client(int server_fd);
 int send_tlv_message(int fd, uint16_t type, const void *data, uint32_t length);
 int recv_tlv_message(int fd, uint16_t *type, void *buffer, uint32_t buffer_size);
 
-// Helper functions
 int send_packet_feature(int fd, const packet_feature_t *feature);
 int recv_detection_result(int fd, detection_result_t *result);
 

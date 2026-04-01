@@ -18,9 +18,19 @@ typedef struct {
     uint32_t length;
 } __attribute__((packed)) tlv_header_t;
 
-// Detection Result Structure
 typedef struct {
-    
+    uint8_t protocol;
+    uint32_t src_ip;
+    uint16_t src_port;
+    uint32_t dst_ip;
+    uint16_t dst_port;
+    uint32_t is_attack;
+    uint32_t confidence;
+} __attribute__((packed)) result_entry_t;
+
+typedef struct {
+    uint32_t ret_size;
+    result_entry_t entries[];
 } __attribute__((packed)) detection_result_t;
 
 #endif // TLV_PROTOCOL_H

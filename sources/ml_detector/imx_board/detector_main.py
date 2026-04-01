@@ -126,33 +126,29 @@ class DDoSDetector:
         logger.info("Detector stopped")
 
     def _reap_completed_proc(self):
-        """Reap completed inference process"""
-        if self._proc is None:
-            return
+        detect_ret = DetectionResult()
 
-        if not self._proc.is_alive():
+        if self._proc is not None and not self._proc.is_alive():
             self._proc.join()
             self._proc = None
-            detect_ret = DetectionResult()
             if not self._result_queue.empty():
                 result_array = self._result_queue.get()
                 if len(result_array) == 0:
                     logger.warning("Empty result array from inference")
-                    return
-                
-                for item in result_array:
-                    flow_id = item[0]
-                    is_attack = item[1]
-                    confidence = item[2]
-                    flow_key = self._lookup_flow_tuple_by_flow_id(flow_id)
-                    if flow_key is not None:
-                        detect_ret.append_new_ret_entry(ResultEntry(flow_key[0], flow_key[1], 
-                                                                    flow_key[2], flow_key[3],
-                                                                    flow_key[4], is_attack, confidence))
-                    else:
-                        logger.warning("Flow ID %d not found in flow table", flow_id)
+                else:
+                    for item in result_array:
+                        flow_id = item[0]
+                        is_attack = item[1]
+                        confidence = item[2]
+                        flow_key = self._lookup_flow_tuple_by_flow_id(flow_id)
+                        if flow_key is not None:
+                            detect_ret.append_new_ret_entry(ResultEntry(
+                                flow_key[0], flow_key[1], flow_key[2],
+                                flow_key[3], flow_key[4], is_attack, confidence))
+                        else:
+                            logger.warning("Flow ID %d not found in flow table", flow_id)
 
-            self.ipc.send_detection_result(detect_ret)
+        self.ipc.send_detection_result(detect_ret)
 
     def _process_incoming_packets(self):
         """Receive packets and update flow table"""

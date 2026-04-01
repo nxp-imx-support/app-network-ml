@@ -81,16 +81,6 @@ int send_packet_feature(int fd, const packet_feature_t *feature) {
     return send_tlv_message(fd, MSG_TYPE_PACKET_FEATURES, feature, sizeof(packet_feature_t));
 }
 
-int recv_packet_feature(int fd, packet_feature_t *feature) {
-    uint16_t type;
-    int len = recv_tlv_message(fd, &type, feature, sizeof(packet_feature_t));
-    return (type == MSG_TYPE_PACKET_FEATURES && len == sizeof(packet_feature_t)) ? 0 : -1;
-}
-
-int send_detection_result(int fd, const detection_result_t *result) {
-    return send_tlv_message(fd, MSG_TYPE_DETECTION_RESULT, result, sizeof(detection_result_t));
-}
-
 int recv_detection_result(int fd, detection_result_t *result) {
     uint16_t type;
     int len = recv_tlv_message(fd, &type, result, sizeof(detection_result_t));
