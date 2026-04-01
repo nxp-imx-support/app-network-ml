@@ -5,7 +5,7 @@
 
 #define MAC_ADDRESS_LENGTH 6
 
-#define PAD_BUFFER_SIZE 13
+#define PAD_BUFFER_SIZE 7
 
 typedef struct {
     uint64_t timestamp;

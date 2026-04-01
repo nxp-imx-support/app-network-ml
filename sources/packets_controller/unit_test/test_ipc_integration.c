@@ -277,14 +277,30 @@ int main(int argc, char **argv)
         return 1;
     }
     printf("Server created on %s\n", socket_path);
+    printf("Waiting for Python client to connect (Press Ctrl+C to exit)...\n");
 
-    int client_fd = accept_client(server_fd);
-    if (client_fd < 0) {
-        fprintf(stderr, "Failed to accept client\n");
+    int client_fd;
+    while (!quit) {
+        client_fd = accept_client(server_fd);
+        if (client_fd == -2) {
+            continue;
+        }
+        if (client_fd < 0) {
+            fprintf(stderr, "Failed to accept client\n");
+            close(server_fd);
+            unlink(socket_path);
+            return 1;
+        }
+        break;
+    }
+
+    if (quit) {
+        printf("\nExiting due to signal...\n");
         close(server_fd);
         unlink(socket_path);
-        return 1;
+        return 130;
     }
+
     printf("Client connected!\n\n");
 
     int ret = 0;

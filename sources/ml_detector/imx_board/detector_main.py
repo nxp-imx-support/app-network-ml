@@ -11,7 +11,7 @@ import tomllib
 import os
 from multiprocessing import Queue
 from socket_ipc import SocketIPC, DetectionResult, ResultEntry
-from sources.ml_detector.imx_board.flow_entry import FlowEntry
+from flow_entry import FlowEntry
 from inference_worker import run_inference_worker
 
 _CONFIG_PATH = os.path.join(os.path.dirname(__file__), "detector.toml")
@@ -33,7 +33,7 @@ MODEL_CONFIGS = {
 }
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s [%(levelname)s] %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -78,6 +78,7 @@ class DDoSDetector:
             pkt_flow_key = (pkt.l4_type, pkt.src_ip, pkt.src_port, pkt.dst_ip, pkt.dst_port)
         
         new_flow = True
+        # logger.debug("Processing packet for flow key: %s", pkt_flow_key)
         for flow_entry in self.flow_table:
             if flow_entry.flow_key == pkt_flow_key:
                 flow_entry.packets.append(pkt)
@@ -112,8 +113,9 @@ class DDoSDetector:
         last_inference_time = time.time()
 
         while self.running:
-            self._reap_completed_proc()
-            self._process_incoming_packets()
+            packet = self._process_incoming_packets()
+            if packet is not None:
+                self._reap_completed_proc()
 
             if time.time() - last_inference_time >= INFERENCE_INTERVAL:
                 if self._proc is None:
@@ -148,20 +150,27 @@ class DDoSDetector:
                         else:
                             logger.warning("Flow ID %d not found in flow table", flow_id)
 
-        self.ipc.send_detection_result(detect_ret)
+        try:
+            self.ipc.send_detection_result(detect_ret)
+        except (ConnectionError, BrokenPipeError) as e:
+            logger.info("Peer closed connection: %s", e)
+            self.running = False
 
     def _process_incoming_packets(self):
         """Receive packets and update flow table"""
         try:
             packet = self.ipc.recv_packet_feature(timeout=IPC_TIMEOUT)
             if packet is None:
-                return
+                return None
             self._update_flow_table(packet)
+            return packet
         except ConnectionError as e:
             logger.error("Connection error: %s", e)
             self.running = False
+            return None
         except Exception as e:
             logger.error("Error processing packet: %s", e)
+            return None
 
     def _trigger_inference(self):
         """Collect ready flows and spawn inference subprocess"""

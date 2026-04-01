@@ -13,37 +13,37 @@ class TLVMessage:
 class PacketFeature:
     FORMAT = '<Q6s6sHI'  # 26B
     FORMAT += 'IIBBI'    # 14B
-    FORMAT += 'HHHIHBI'    # 11B
-    FORMAT += '13s'      # 13B PAD
-    SIZE = 64            # 51 + 13(PAD)
+    FORMAT += 'HHHIHBI'    # 17B
+    FORMAT += '7s'      # 7B PAD
+    SIZE = 64            # 57 + 7(PAD)
 
     def __init__(self, timestamp=0, src_mac=b'\x00'*6, dst_mac=b'\x00'*6,
                  l3_type=0, l2_length=0, src_ip=0, dst_ip=0, ip_flags=0, l4_type=0,
                  l3_length=0, src_port=0, dst_port=0, tcp_flags=0, tcp_ack=0, 
                  tcp_win=0, icmp_type=0, l4_length=0):
         # TODO: Need to check the type of timestamp
-        self.timestamp = timestamp
+        self.timestamp = timestamp # 8B
         # Layer2 
-        self.src_mac = src_mac
-        self.dst_mac = dst_mac
-        self.l3_type = l3_type
-        self.l2_length = l2_length
+        self.src_mac = src_mac # 6B
+        self.dst_mac = dst_mac # 6B
+        self.l3_type = l3_type # 2B
+        self.l2_length = l2_length # 4B
 
         # Layer3
-        self.src_ip = src_ip
-        self.dst_ip = dst_ip
-        self.ip_flags = ip_flags
-        self.l4_type = l4_type
-        self.l3_length = l3_length
+        self.src_ip = src_ip # 4B
+        self.dst_ip = dst_ip # 4B
+        self.ip_flags = ip_flags # 1B
+        self.l4_type = l4_type # 1B
+        self.l3_length = l3_length # 4B
 
         # Layer4
-        self.src_port = src_port
-        self.dst_port = dst_port
-        self.tcp_flags = tcp_flags
-        self.tcp_ack = tcp_ack
-        self.tcp_win = tcp_win
-        self.icmp_type = icmp_type
-        self.l4_length = l4_length
+        self.src_port = src_port # 2B
+        self.dst_port = dst_port # 2B
+        self.tcp_flags = tcp_flags # 2B
+        self.tcp_ack = tcp_ack # 4B
+        self.tcp_win = tcp_win # 2B
+        self.icmp_type = icmp_type # 1B
+        self.l4_length = l4_length # 4B
 
     def to_bytes(self):
         return struct.pack(self.FORMAT, self.timestamp, self.src_mac, self.dst_mac,
@@ -99,6 +99,7 @@ class SocketIPC:
 
     def send_tlv(self, msg_type, data):
         header = struct.pack(TLVMessage.HEADER_FORMAT, msg_type, len(data))
+        #  print(f"send_tlv: header={header.hex()} payload={data.hex()}")
         self.sock.sendall(header + data)
 
     def recv_tlv(self, timeout=None):

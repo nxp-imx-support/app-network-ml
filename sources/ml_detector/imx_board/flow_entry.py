@@ -10,6 +10,6 @@ class FlowEntry:
     def __init__(self, flow_id, flow_key, packet):
         self.flow_id: int = flow_id
         self.flow_key: tuple = flow_key
-        self.packets: List = list(packet)
+        self.packets: List = [packet]
         self.first_packet_time: float = packet.timestamp
         self.is_ready: bool = True

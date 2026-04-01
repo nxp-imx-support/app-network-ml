@@ -51,7 +51,26 @@ int connect_unix_socket_client(const char *socket_path) {
 }
 
 int accept_client(int server_fd) {
-    return accept(server_fd, NULL, NULL);
+    while (1) {
+        fd_set read_fds;
+        FD_ZERO(&read_fds);
+        FD_SET(server_fd, &read_fds);
+
+        struct timeval tv;
+        tv.tv_sec = 0;
+        tv.tv_usec = 500000;
+
+        int ret = select(server_fd + 1, &read_fds, NULL, NULL, &tv);
+        if (ret < 0) {
+            if (errno == EINTR) continue;
+            return -1;
+        }
+        if (ret == 0) {
+            return -2;
+        }
+
+        return accept(server_fd, NULL, NULL);
+    }
 }
 
 int send_tlv_message(int fd, uint16_t type, const void *data, uint32_t length) {
@@ -73,6 +92,16 @@ int recv_tlv_message(int fd, uint16_t *type, void *buffer, uint32_t buffer_size)
 
     if (header.length > buffer_size) return -1;
     if (header.length > 0 && read(fd, buffer, header.length) != header.length) return -1;
+
+    printf("DEBUG recv_tlv: header=");
+    for (int i = 0; i < TLV_HEADER_SIZE; i++) {
+        printf("%02x", ((uint8_t *)&header)[i]);
+    }
+    printf(" payload=");
+    for (uint32_t i = 0; i < header.length; i++) {
+        printf("%02x", ((uint8_t *)buffer)[i]);
+    }
+    printf("\n");
 
     return header.length;
 }
