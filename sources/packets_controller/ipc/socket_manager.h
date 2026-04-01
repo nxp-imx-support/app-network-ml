@@ -18,8 +18,6 @@ int recv_tlv_message(int fd, uint16_t *type, void *buffer, uint32_t buffer_size)
 
 // Helper functions
 int send_packet_feature(int fd, const packet_feature_t *feature);
-int recv_packet_feature(int fd, packet_feature_t *feature);
-int send_detection_result(int fd, const detection_result_t *result);
 int recv_detection_result(int fd, detection_result_t *result);
 
 #endif // SOCKET_MANAGER_H

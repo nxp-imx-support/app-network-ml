@@ -13,7 +13,7 @@ class TLVMessage:
 class PacketFeature:
     FORMAT = '<Q6s6sHI'  # 26B
     FORMAT += 'IIBBI'    # 14B
-    FORMAT += 'HHHBI'    # 11B
+    FORMAT += 'HHHIHBI'    # 11B
     FORMAT += '13s'      # 13B PAD
     SIZE = 64            # 51 + 13(PAD)
 
