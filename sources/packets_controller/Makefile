@@ -3,6 +3,7 @@
 
 CC ?= aarch64-poky-linux-gcc
 CFLAGS = -Wall -Wextra -I./common -I./ipc -I./xdp -O2
+LDFLAGS = -lbpf
 
 IPC_DIR = ./ipc
 IPC_OBJ = $(IPC_DIR)/socket_manager.o
@@ -13,6 +14,7 @@ XDP_OBJ = $(XDP_DIR)/xdp_controller.o
 BUILD_DIR = build
 TARGET = $(BUILD_DIR)/packets_controller_main
 SRC = packets_controller_main.c
+LDFLAGS ?= -lbpf
 
 .PHONY: all clean
 
@@ -25,7 +27,7 @@ $(XDP_OBJ):
 	$(MAKE) -C $(XDP_DIR)
 
 $(TARGET): $(BUILD_DIR)/packets_controller_main.o $(IPC_OBJ) $(XDP_OBJ)
-	$(CC) $(CFLAGS) -o $@ $< $(IPC_OBJ) $(XDP_OBJ)
+	$(CC) $(CFLAGS) -o $@ $< $(IPC_OBJ) $(XDP_OBJ) $(LDFLAGS)
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)

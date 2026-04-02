@@ -21,9 +21,12 @@
 #define DEFAULT_SOCKET_PATH "/tmp/detector.sock"
 #define DEFAULT_WHITELIST_PATH "whitelist.txt"
 #define MAX_WHITELIST_IPS 256
+#define MAX_INTERFACES 2
 
 typedef struct {
-    const char *ifname;
+    const char *ifnames[MAX_INTERFACES];
+    int ifcount;
+    const char *monitor_ifname;
     const char *prog_file;
     const char *socket_path;
     const char *whitelist_path;
@@ -42,7 +45,9 @@ static int match_whitelist(const packet_feature_t *feat);
 int main(int argc, char **argv)
 {
     cli_args_t args = {
-        .ifname = NULL,
+        .ifnames = {NULL, NULL},
+        .ifcount = 0,
+        .monitor_ifname = NULL,
         .prog_file = NULL,
         .socket_path = DEFAULT_SOCKET_PATH,
         .whitelist_path = DEFAULT_WHITELIST_PATH
@@ -55,7 +60,7 @@ int main(int argc, char **argv)
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
-    if (xdp_init(args.ifname, args.prog_file) < 0) {
+    if (xdp_init(args.ifnames, args.ifcount, args.monitor_ifname, args.prog_file) < 0) {
         fprintf(stderr, "Failed to initialize XDP\n");
         return 1;
     }
@@ -156,20 +161,37 @@ static void signal_handler(int sig)
 
 static void print_usage(const char *prog)
 {
-    fprintf(stderr, "Usage: %s -i <interface> -p <xdp_prog.o> [-s <socket_path>] [-w <whitelist_file>]\n", prog);
-    fprintf(stderr, "  -i  Network interface (required, e.g., eth0)\n");
+    fprintf(stderr, "Usage: %s -i <interface> [<interface>] -m <monitor_interface> -p <xdp_prog.o> [-s <socket_path>] [-w <whitelist_file>]\n", prog);
+    fprintf(stderr, "  -i  Network interface(s) (1 or 2 interfaces, e.g., eth0 or eth0 eth1)\n");
+    fprintf(stderr, "  -m  Monitor interface for ML detection (must be one of -i interfaces)\n");
     fprintf(stderr, "  -p  XDP program file (.o) (required)\n");
     fprintf(stderr, "  -s  Socket path for ml_detector IPC (optional, default: %s)\n", DEFAULT_SOCKET_PATH);
     fprintf(stderr, "  -w  Whitelist file (optional, default: %s)\n", DEFAULT_WHITELIST_PATH);
+    fprintf(stderr, "\nExamples:\n");
+    fprintf(stderr, "  %s -i eth0 -m eth0 -p xdp_forward_kern.o          # Single interface (echo + ML)\n", prog);
+    fprintf(stderr, "  %s -i eth0 eth1 -m eth0 -p xdp_forward_kern.o    # Dual interface (eth0: ML, eth1: forward)\n", prog);
 }
 
 static int parse_arguments(int argc, char **argv, cli_args_t *args)
 {
     int opt;
-    while ((opt = getopt(argc, argv, "i:p:s:w:h")) != -1) {
+    int ifidx = 0;
+    int got_monitor = 0;
+
+    while ((opt = getopt(argc, argv, "i:m:p:s:w:h")) != -1) {
         switch (opt) {
             case 'i':
-                args->ifname = optarg;
+                while (optind < argc && ifidx < MAX_INTERFACES) {
+                    if (argv[optind][0] == '-') {
+                        break;
+                    }
+                    args->ifnames[ifidx++] = argv[optind++];
+                }
+                optind--;
+                break;
+            case 'm':
+                args->monitor_ifname = optarg;
+                got_monitor = 1;
                 break;
             case 'p':
                 args->prog_file = optarg;
@@ -189,7 +211,24 @@ static int parse_arguments(int argc, char **argv, cli_args_t *args)
         }
     }
 
-    if (!args->ifname || !args->prog_file) {
+    if (ifidx == 0) {
+        fprintf(stderr, "Error: At least one interface required (-i)\n");
+        print_usage(argv[0]);
+        return 1;
+    }
+
+    if (!got_monitor && ifidx == 1) {
+        args->monitor_ifname = args->ifnames[0];
+    } else if (!got_monitor) {
+        fprintf(stderr, "Error: -m required when using 2 interfaces\n");
+        print_usage(argv[0]);
+        return 1;
+    }
+
+    args->ifcount = ifidx;
+
+    if (!args->prog_file) {
+        fprintf(stderr, "Error: XDP program file required (-p)\n");
         print_usage(argv[0]);
         return 1;
     }
