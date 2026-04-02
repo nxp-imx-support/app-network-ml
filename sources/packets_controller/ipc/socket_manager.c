@@ -112,6 +112,18 @@ int send_packet_feature(int fd, const packet_feature_t *feature) {
 
 int recv_detection_result(int fd, detection_result_t *result) {
     uint16_t type;
-    int len = recv_tlv_message(fd, &type, result, sizeof(detection_result_t));
-    return (type == MSG_TYPE_DETECTION_RESULT && len == sizeof(detection_result_t)) ? 0 : -1;
+    uint8_t buffer[MAX_DETECTION_RESULT_SIZE];
+
+    int len = recv_tlv_message(fd, &type, buffer, MAX_DETECTION_RESULT_SIZE);
+    if (len < 0) return -1;
+    if (type != MSG_TYPE_DETECTION_RESULT) return -1;
+
+    uint32_t ret_size = 0;
+    memcpy(&ret_size, buffer, sizeof(uint32_t));
+
+    uint32_t expected_len = sizeof(uint32_t) + ret_size * sizeof(result_entry_t);
+    if ((uint32_t)len != expected_len) return -1;
+
+    memcpy(result, buffer, len);
+    return 0;
 }
