@@ -20,12 +20,12 @@
 #define PAD_BUFFER_SIZE 7
 
 struct flow_rule {
-    __u32 src_ip;
-    __u32 dst_ip;
-    __u16 src_port;
-    __u16 dst_port;
     __u8 protocol;
-};
+    __u32 src_ip;
+    __u16 src_port;
+    __u32 dst_ip;
+    __u16 dst_port;
+} __attribute__((packed));
 
 struct packet_feature {
     __u64 timestamp;
@@ -69,10 +69,17 @@ struct {
 
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, 3);
+    __type(key, __u32);
+    __type(value, __u32);
+} ifindex_map SEC(".maps");
+
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
     __uint(max_entries, 1);
     __type(key, __u32);
-    __type(value, __u64);
-} stats_map SEC(".maps");
+    __type(value, __u32);
+} monitor_ifindex_map SEC(".maps");
 
 static __always_inline int match_whitelist_flow(__u32 src_ip, __u32 dst_ip)
 {
@@ -159,20 +166,55 @@ int xdp_forward_prog(struct xdp_md *ctx)
     if (match_blacklist_exact(&key))
         return XDP_DROP;
 
-    struct packet_feature *pkt = bpf_ringbuf_reserve(&packet_ringbuf, sizeof(struct packet_feature), 0);
-    if (pkt) {
-        __builtin_memset(pkt, 0, sizeof(struct packet_feature));
-        pkt->timestamp = bpf_ktime_get_ns();
-        pkt->src_ip = ip->saddr;
-        pkt->dst_ip = ip->daddr;
-        pkt->l4_type = ip->protocol;
-        pkt->src_port = src_port;
-        pkt->dst_port = dst_port;
-        pkt->ip_flags = ip->frag_off;
-        pkt->l3_length = ip->tot_len;
-        pkt->l3_type = eth->h_proto;
-        pkt->tcp_flags = tcp_flags;
-        bpf_ringbuf_submit(pkt, 0);
+    __u32 ingress_ifindex = ctx->ingress_ifindex;
+    __u32 *is_monitor = bpf_map_lookup_elem(&monitor_ifindex_map, &ingress_ifindex);
+    if (is_monitor && *is_monitor == 1) {
+        struct packet_feature *pkt = bpf_ringbuf_reserve(&packet_ringbuf, sizeof(struct packet_feature), 0);
+        if (pkt) {
+            __builtin_memset(pkt, 0, sizeof(struct packet_feature));
+            pkt->timestamp = bpf_ktime_get_ns();
+            __builtin_memcpy(pkt->src_mac, eth->h_source, MAC_ADDRESS_LENGTH);
+            __builtin_memcpy(pkt->dst_mac, eth->h_dest, MAC_ADDRESS_LENGTH);
+            pkt->l3_type = eth->h_proto;
+            pkt->l2_length = ctx->data_end - ctx->data;
+            pkt->src_ip = ip->saddr;
+            pkt->dst_ip = ip->daddr;
+            pkt->ip_flags = ip->frag_off;
+            pkt->l4_type = ip->protocol;
+            pkt->l3_length = ip->tot_len;
+            pkt->src_port = src_port;
+            pkt->dst_port = dst_port;
+            pkt->tcp_flags = tcp_flags;
+            pkt->tcp_ack = 0;
+            pkt->tcp_win = 0;
+            pkt->icmp_type = 0;
+            pkt->l4_length = ip->tot_len - (ip->ihl * 4);
+            bpf_ringbuf_submit(pkt, 0);
+        }
+    }
+
+    __u32 idx = 0;
+    __u32 *ifcount_ptr = bpf_map_lookup_elem(&ifindex_map, &idx);
+    if (!ifcount_ptr)
+        return XDP_PASS;
+
+    __u32 ifcount = *ifcount_ptr;
+
+    if (ifcount == 2) {
+        __u32 ifindexes[2] = {0, 0};
+        idx = 1;
+        __u32 *ifindex0 = bpf_map_lookup_elem(&ifindex_map, &idx);
+        if (ifindex0)
+            ifindexes[0] = *ifindex0;
+
+        idx = 2;
+        __u32 *ifindex1 = bpf_map_lookup_elem(&ifindex_map, &idx);
+        if (ifindex1)
+            ifindexes[1] = *ifindex1;
+
+        __u32 other_ifindex = (ingress_ifindex == ifindexes[0]) ? ifindexes[1] : ifindexes[0];
+        if (other_ifindex != 0)
+            return bpf_redirect(other_ifindex, 0);
     }
 
     return XDP_PASS;

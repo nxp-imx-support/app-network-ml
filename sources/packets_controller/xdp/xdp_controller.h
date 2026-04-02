@@ -10,7 +10,7 @@
 
 #include <stdint.h>
 
-typedef struct {
+typedef struct __attribute__((packed)) {
     uint8_t protocol;
     uint32_t src_ip;
     uint16_t src_port;
@@ -18,7 +18,7 @@ typedef struct {
     uint16_t dst_port;
 } flow_rule_t;
 
-int xdp_init(const char *ifname, const char *prog_file);
+int xdp_init(const char *ifnames[], int ifcount, const char *monitor_ifname, const char *prog_file);
 void xdp_cleanup(void);
 int xdp_read_packet_feature(void *feat);
 int xdp_update_blacklist(const flow_rule_t *rule);
