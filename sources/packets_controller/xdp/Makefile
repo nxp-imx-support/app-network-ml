@@ -4,7 +4,7 @@
 CC ?= aarch64-poky-linux-gcc
 CFLAGS = -Wall -Wextra -I../common -I../ipc -O2
 CLANG ?= clang --sysroot=$(SDKTARGETSYSROOT)
-CL_FLAGS := -g -O3 -target bpf -D__aarch64__ -D__KERNEL__ -D__BPF__ -Wall
+CL_FLAGS := -g -O3 -target bpf -D__aarch64__ -D__KERNEL__ -D__BPF__ -Wall -I../common
 
 BUILD_DIR = ../build
 
@@ -20,3 +20,4 @@ xdp_forward_kern.o: xdp_forward_kern.c
 
 clean:
 	rm -f xdp_controller.o
+	rm -f xdp_forward_kern.o

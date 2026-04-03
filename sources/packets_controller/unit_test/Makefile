@@ -39,6 +39,9 @@ $(XDP_OBJ):
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
+install: all
+	install -D -m 644 ../xdp/xdp_forward_kern.o $(BUILD_DIR)/xdp_forward_kern.o
+
 clean:
 	rm -rf $(BUILD_DIR)
 	$(MAKE) -C $(IPC_DIR) clean

@@ -105,16 +105,13 @@ static int test_whitelist_update(void)
 {
     printf("\n=== Loading Whitelist Entries ===\n");
 
-    flow_rule_t whitelist[] = {
-        {6,  inet_addr("192.168.1.0"),   0,      0,               htons(80)},
-        {6,  inet_addr("192.168.1.0"),   0,      0,               htons(443)},
-        {17, inet_addr("10.0.0.0"),      htons(53), 0,            0},
+    uint32_t whitelist[] = {
+        inet_addr("127.0.0.1"), inet_addr("10.0.0.1")
     };
     int num_entries = (int)(sizeof(whitelist) / sizeof(whitelist[0]));
 
     for (int i = 0; i < num_entries; i++) {
-        print_flow_rule("Adding", &whitelist[i]);
-        if (xdp_update_whitelist(&whitelist[i]) < 0) {
+        if (xdp_update_whitelist(whitelist[i]) < 0) {
             fprintf(stderr, "Failed to update whitelist[%d]\n", i);
             return -1;
         }
@@ -168,15 +165,16 @@ int main(int argc, char **argv)
     int got_monitor = 0;
 
     while ((opt = getopt(argc, argv, "i:m:p:h")) != -1) {
+        printf("Processing option: -%c, optind = %d\n", opt, optind);
         switch (opt) {
             case 'i':
-                while (optind < argc && ifidx < MAX_INTERFACES) {
-                    if (argv[optind][0] == '-') {
-                        break;
-                    }
+                printf("Add interface: %s\n", optarg);
+                ifnames[ifidx++] = optarg;
+                printf(" optind = %d, argc = %d, argv = %s\n", optind, argc, argv[optind]);
+                while (optind < argc && argv[optind][0] != '-' && ifidx < MAX_INTERFACES) {
+                    printf("Add interface: %s\n", argv[optind]);
                     ifnames[ifidx++] = argv[optind++];
                 }
-                optind--;
                 break;
             case 'm':
                 monitor_ifname = optarg;
@@ -248,13 +246,16 @@ int main(int argc, char **argv)
     while (!quit) {
         packet_feature_t feat;
 
-        if (xdp_read_packet_feature(&feat) == 0) {
+        int status = xdp_read_packet_feature(&feat);
+        if (status == 0) {
             count++;
             printf("[%d] ", count);
             print_packet_feature(&feat);
-        }
+        } else if (status == -1) 
+            fprintf(stderr, "Error reading packet feature: ring buffer poll error\n");
 
-        usleep(1000);
+        // sleep 100ms for test
+        usleep(1000 * 100);
     }
 
     printf("\nShutting down...\n");

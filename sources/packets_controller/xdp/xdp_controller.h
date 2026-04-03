@@ -22,6 +22,6 @@ int xdp_init(const char *ifnames[], int ifcount, const char *monitor_ifname, con
 void xdp_cleanup(void);
 int xdp_read_packet_feature(void *feat);
 int xdp_update_blacklist(const flow_rule_t *rule);
-int xdp_update_whitelist(const flow_rule_t *rule);
+int xdp_update_whitelist(const uint32_t ip_addr);
 
 #endif

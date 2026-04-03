@@ -10,8 +10,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
-#include <poll.h>
 #include <net/if.h>
+#include <linux/if_link.h>
 
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
@@ -28,7 +28,24 @@ static int blacklist_map_fd = -1;
 static int ifindex_map_fd = -1;
 static int monitor_ifindex_map_fd = -1;
 static int ringbuf_fd = -1;
-static struct pollfd xdp_pollfd;
+static struct ring_buffer *rb = NULL;
+static packet_feature_t pending_pkt;
+static volatile int has_pending = 0;
+
+int ringbuf_callback(void *ctx, void *data, size_t len) 
+{
+    (void)ctx;
+
+    if (len != sizeof(packet_feature_t)) {
+        fprintf(stderr, "XDP: Invalid packet size: %zu\n", len);
+        return 0;
+    }
+    
+    memcpy(&pending_pkt, data, sizeof(packet_feature_t));
+    has_pending = 1;
+    
+    return 1;  // Stop processing next packet
+}
 
 int xdp_init(const char *ifnames[], int ifcount_arg, const char *monitor_ifname, const char *prog_file)
 {
@@ -65,6 +82,14 @@ int xdp_init(const char *ifnames[], int ifcount_arg, const char *monitor_ifname,
         return -1;
     }
     ringbuf_fd = bpf_map__fd(map);
+
+    rb = ring_buffer__new(ringbuf_fd, ringbuf_callback, NULL, NULL);
+    if (!rb) {
+        fprintf(stderr, "XDP: Failed to create ring buffer\n");
+        bpf_object__close(obj);
+        obj = NULL;
+        return -1;
+    }
 
     map = bpf_object__find_map_by_name(obj, "whitelist_map");
     if (!map) {
@@ -158,7 +183,7 @@ int xdp_init(const char *ifnames[], int ifcount_arg, const char *monitor_ifname,
     }
 
     for (int i = 0; i < ifcount; i++) {
-        err = bpf_xdp_attach(ifindexes[i], prog_fd, 0, NULL);
+        err = bpf_xdp_attach(ifindexes[i], prog_fd, XDP_FLAGS_SKB_MODE, NULL);
         if (err < 0) {
             fprintf(stderr, "XDP: Failed to attach XDP to %s: %d\n", ifnames[i], err);
             for (int j = 0; j < i; j++) {
@@ -169,9 +194,6 @@ int xdp_init(const char *ifnames[], int ifcount_arg, const char *monitor_ifname,
             return -1;
         }
     }
-
-    xdp_pollfd.fd = ringbuf_fd;
-    xdp_pollfd.events = POLLIN;
 
     fprintf(stderr, "XDP: Initialized with %d interface(s)\n", ifcount);
     for (int i = 0; i < ifcount; i++) {
@@ -191,6 +213,11 @@ void xdp_cleanup(void)
     }
     ifcount = 0;
 
+    if (rb) {
+        ring_buffer__free(rb);
+        rb = NULL;
+    }
+
     if (obj) {
         bpf_object__close(obj);
         obj = NULL;
@@ -205,25 +232,25 @@ void xdp_cleanup(void)
 
 int xdp_read_packet_feature(void *feat)
 {
-    int ret;
-
-    if (ringbuf_fd < 0) {
+    if (!rb) {
         return -1;
     }
-
-    ret = poll(&xdp_pollfd, 1, 100);
-    if (ret <= 0) {
+    
+    has_pending = 0;
+    
+    // timeout = 100ms
+    int err = ring_buffer__poll(rb, 100);
+    
+    if (err < 0) {
+        fprintf(stderr, "XDP: ring_buffer__poll error: %d\n", err);
         return -1;
     }
-
-    if (xdp_pollfd.revents & POLLIN) {
-        ssize_t len = read(ringbuf_fd, feat, sizeof(packet_feature_t));
-        if (len == sizeof(packet_feature_t)) {
-            return 0;
-        }
-    }
-
-    return -1;
+    
+    if (!has_pending)
+        return -2;  // Timeout
+    
+    memcpy(feat, &pending_pkt, sizeof(packet_feature_t));
+    return 0;
 }
 
 int xdp_update_blacklist(const flow_rule_t *rule)
@@ -244,7 +271,7 @@ int xdp_update_blacklist(const flow_rule_t *rule)
     return 0;
 }
 
-int xdp_update_whitelist(const flow_rule_t *rule)
+int xdp_update_whitelist(const uint32_t ip_addr)
 {
     uint32_t val = 1;
     int err;
@@ -253,7 +280,7 @@ int xdp_update_whitelist(const flow_rule_t *rule)
         return -1;
     }
 
-    err = bpf_map_update_elem(whitelist_map_fd, rule, &val, BPF_ANY);
+    err = bpf_map_update_elem(whitelist_map_fd, (void*)&ip_addr, &val, BPF_ANY);
     if (err < 0) {
         fprintf(stderr, "XDP: Failed to update whitelist: %d\n", err);
         return -1;

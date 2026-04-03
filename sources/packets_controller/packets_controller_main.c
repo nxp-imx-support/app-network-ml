@@ -121,8 +121,10 @@ int main(int argc, char **argv)
             break;
         }
 
-        detection_result_t result;
-        if (recv_detection_result(client_fd, &result) < 0) {
+        uint8_t result_buffer[MAX_DETECTION_RESULT_SIZE];
+        detection_result_t *result_ptr = (detection_result_t *)result_buffer;
+        
+        if (recv_detection_result(client_fd, result_ptr) < 0) {
             if (errno == EINTR) {
                 continue;
             }
@@ -130,14 +132,15 @@ int main(int argc, char **argv)
             break;
         }
 
-        for (uint32_t i = 0; i < result.ret_size; i++) {
-            if (result.entries[i].is_attack) {
+        result_entry_t *entries = (result_entry_t *)(result_buffer + sizeof(uint32_t));
+        for (uint32_t i = 0; i < result_ptr->ret_size; i++) {
+            if (entries[i].is_attack) {
                 flow_rule_t rule = {
-                    .protocol = result.entries[i].protocol,
-                    .src_ip = result.entries[i].src_ip,
-                    .src_port = result.entries[i].src_port,
-                    .dst_ip = result.entries[i].dst_ip,
-                    .dst_port = result.entries[i].dst_port
+                    .protocol = entries[i].protocol,
+                    .src_ip = entries[i].src_ip,
+                    .src_port = entries[i].src_port,
+                    .dst_ip = entries[i].dst_ip,
+                    .dst_port = entries[i].dst_port
                 };
                 xdp_update_blacklist(&rule);
             }
@@ -181,13 +184,10 @@ static int parse_arguments(int argc, char **argv, cli_args_t *args)
     while ((opt = getopt(argc, argv, "i:m:p:s:w:h")) != -1) {
         switch (opt) {
             case 'i':
-                while (optind < argc && ifidx < MAX_INTERFACES) {
-                    if (argv[optind][0] == '-') {
-                        break;
-                    }
+                args->ifnames[ifidx++] = optarg;
+                while (optind < argc && argv[optind][0] != '-' && ifidx < MAX_INTERFACES) {
                     args->ifnames[ifidx++] = argv[optind++];
                 }
-                optind--;
                 break;
             case 'm':
                 args->monitor_ifname = optarg;

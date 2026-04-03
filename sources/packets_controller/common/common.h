@@ -1,31 +1,31 @@
 #ifndef COMMON_H
 #define COMMON_H
 
-#include <stdint.h>
+#include <linux/types.h>
 
 #define MAC_ADDRESS_LENGTH 6
 
 #define PAD_BUFFER_SIZE 7
 
 typedef struct {
-    uint64_t timestamp;
-    uint8_t src_mac[MAC_ADDRESS_LENGTH];
-    uint8_t dst_mac[MAC_ADDRESS_LENGTH];
-    uint16_t l3_type;
-    uint32_t l2_length;
-    uint32_t src_ip;
-    uint32_t dst_ip;
-    uint8_t ip_flags;
-    uint8_t l4_type;
-    uint32_t l3_length;
-    uint16_t src_port;
-    uint16_t dst_port;
-    uint16_t tcp_flags;
-    uint32_t tcp_ack;
-    uint16_t tcp_win;
-    uint8_t icmp_type;
-    uint32_t l4_length;
-    uint8_t pad[PAD_BUFFER_SIZE];
+    __u64 timestamp;
+    __u8 src_mac[MAC_ADDRESS_LENGTH];
+    __u8 dst_mac[MAC_ADDRESS_LENGTH];
+    __u16 l3_type;
+    __u32 l2_length;
+    __u32 src_ip;
+    __u32 dst_ip;
+    __u8 ip_flags;
+    __u8 l4_type;
+    __u32 l3_length;
+    __u16 src_port;
+    __u16 dst_port;
+    __u16 tcp_flags;
+    __u32 tcp_ack;
+    __u16 tcp_win;
+    __u8 icmp_type;
+    __u32 l4_length;
+    __u8 pad[PAD_BUFFER_SIZE];
 } __attribute__((packed)) packet_feature_t;
 
 #endif // COMMON_H
