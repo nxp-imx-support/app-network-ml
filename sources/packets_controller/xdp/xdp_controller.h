@@ -10,18 +10,10 @@
 
 #include <stdint.h>
 
-typedef struct __attribute__((packed)) {
-    uint8_t protocol;
-    uint32_t src_ip;
-    uint16_t src_port;
-    uint32_t dst_ip;
-    uint16_t dst_port;
-} flow_rule_t;
-
 int xdp_init(const char *ifnames[], int ifcount, const char *monitor_ifname, const char *prog_file);
 void xdp_cleanup(void);
 int xdp_read_packet_feature(void *feat);
-int xdp_update_blacklist(const flow_rule_t *rule);
+int xdp_update_blacklist(const uint32_t src_ip);
 int xdp_update_whitelist(const uint32_t ip_addr);
 
 #endif

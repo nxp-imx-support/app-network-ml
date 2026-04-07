@@ -28,9 +28,9 @@ static __always_inline int match_whitelist_flow(__u32 src_ip, __u32 dst_ip)
     return 0;
 }
 
-static __always_inline int match_blacklist_exact(struct flow_rule *key)
+static __always_inline int match_blacklist_flow(__u32 src_ip)
 {
-    __u32 *val = bpf_map_lookup_elem(&blacklist_map, key);
+    __u32 *val = bpf_map_lookup_elem(&blacklist_map, &src_ip);
     return val && *val == 1;
 }
 
@@ -50,11 +50,6 @@ int xdp_forward_prog(struct xdp_md *ctx)
     struct iphdr *ip = (void *)(eth + 1);
     if ((void *)(ip + 1) > data_end)
         return XDP_PASS;
-
-    struct flow_rule key = {0};
-    key.src_ip = ip->saddr;
-    key.dst_ip = ip->daddr;
-    key.protocol = ip->protocol;
 
     __u16 src_port = 0;
     __u16 dst_port = 0;
@@ -82,13 +77,10 @@ int xdp_forward_prog(struct xdp_md *ctx)
         icmp_type = icmp->type;
     }
 
-    key.src_port = src_port;
-    key.dst_port = dst_port;
-
-    if (match_whitelist_flow(key.src_ip, key.dst_ip))
+    if (match_whitelist_flow(ip->saddr, ip->daddr))
         return XDP_PASS;
 
-    if (match_blacklist_exact(&key))
+    if (match_blacklist_flow(ip->saddr))
         return XDP_DROP;
 
     __u32 ingress_ifindex = ctx->ingress_ifindex;

@@ -133,14 +133,7 @@ int main(int argc, char **argv)
         result_entry_t *entries = (result_entry_t *)(result_buffer + sizeof(uint32_t));
         for (uint32_t i = 0; i < result_ptr->ret_size; i++) {
             if (entries[i].is_attack) {
-                flow_rule_t rule = {
-                    .protocol = entries[i].protocol,
-                    .src_ip = entries[i].src_ip,
-                    .src_port = entries[i].src_port,
-                    .dst_ip = entries[i].dst_ip,
-                    .dst_port = entries[i].dst_port
-                };
-                xdp_update_blacklist(&rule);
+                xdp_update_blacklist(entries[i].src_ip);
             }
         }
     }

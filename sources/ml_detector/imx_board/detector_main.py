@@ -71,9 +71,9 @@ class DDoSDetector:
     def _update_flow_table(self, pkt):
         # Make flow key
         pkt_flow_key = None
-        if pkt.src_port > pkt.dst_port:
+        if pkt.src_port < pkt.dst_port:
             pkt_flow_key = (pkt.l4_type, pkt.dst_ip, pkt.dst_port, pkt.src_ip, pkt.src_port)
-        elif pkt.src_port == pkt.dst_port and pkt.src_ip > pkt.dst_ip:
+        elif pkt.src_port == pkt.dst_port and pkt.src_ip < pkt.dst_ip:
             pkt_flow_key = (pkt.l4_type, pkt.dst_ip, pkt.dst_port, pkt.src_ip, pkt.src_port)
         else:
             pkt_flow_key = (pkt.l4_type, pkt.src_ip, pkt.src_port, pkt.dst_ip, pkt.dst_port)
@@ -130,7 +130,6 @@ class DDoSDetector:
         logger.info("Detector stopped")
 
     def _reap_completed_proc(self):
-        logger.debug("Reaping completed inference process")
         detect_ret = DetectionResult()
 
         if self._proc is not None and not self._proc.is_alive():

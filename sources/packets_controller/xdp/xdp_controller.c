@@ -253,7 +253,7 @@ int xdp_read_packet_feature(void *feat)
     return 0;
 }
 
-int xdp_update_blacklist(const flow_rule_t *rule)
+int xdp_update_blacklist(const uint32_t src_ip)
 {
     uint32_t val = 1;
     int err;
@@ -262,7 +262,7 @@ int xdp_update_blacklist(const flow_rule_t *rule)
         return -1;
     }
 
-    err = bpf_map_update_elem(blacklist_map_fd, rule, &val, BPF_ANY);
+    err = bpf_map_update_elem(blacklist_map_fd, &src_ip, &val, BPF_ANY);
     if (err < 0) {
         fprintf(stderr, "XDP: Failed to update blacklist: %d\n", err);
         return -1;
