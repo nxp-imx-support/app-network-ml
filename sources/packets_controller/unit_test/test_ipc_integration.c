@@ -11,12 +11,12 @@
  *
  * Terminal 1 (Python - ml_detector):
  *   $ cd sources/ml_detector/imx_board
- *   $ python3 detector_main.py --socket-path /tmp/detector.sock
+ *   $ python3 detector_main.py --socket-path /tmp/imx_ddb.socket
  *
  * Terminal 2 (C - packets_controller):
  *   $ cd sources/packets_controller/unit_test
  *   $ make
- *   $ ./test_ipc_integration /tmp/detector.sock
+ *   $ ./test_ipc_integration /tmp/imx_ddb.socket
  *
  * The C program acts as the server and will:
  * 1. Wait for Python client connection
@@ -40,7 +40,7 @@
 #include "../ipc/tlv_protocol.h"
 #include "../ipc/socket_manager.h"
 
-#define SOCKET_PATH_DEFAULT "/tmp/detector.sock"
+#define SOCKET_PATH_DEFAULT "/tmp/imx_ddb.socket"
 
 static volatile int quit = 0;
 

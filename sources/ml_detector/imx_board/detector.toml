@@ -9,9 +9,9 @@ ipc_timeout = 0.1
 max_batch_size = 100
 
 [models.lucid_cnn]
-path = "output/LUCID-ddos-CIC2019-quant-int8.tflite"
+path = "model/LUCID-ddos-CIC2019-quant-int8.tflite"
 input_shape = [-1, 10, 11, 1]
 
 [models.simple_dnn]
-path = "output/simple-dnn-quant-int8.tflite"
-input_shape = [110]
+path = "model/simple-dnn-quant-int8.tflite"
+input_shape = [-1, 110]

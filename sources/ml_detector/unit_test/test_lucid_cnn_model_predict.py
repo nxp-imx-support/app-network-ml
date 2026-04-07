@@ -41,7 +41,12 @@ class TestLucidCNNModelPredict(unittest.TestCase):
         )
 
     def _create_flow(self, flow_id, packets):
-        flow = FlowEntry(flow_id=flow_id, packets=packets)
+        if len(packets) == 0:
+            return None
+        flow = FlowEntry(flow_id=flow_id, flow_key=(packets[0].l4_type, packets[0].src_ip, packets[0].src_port, 
+                                                    packets[0].dst_ip, packets[0].dst_port), packet=packets[0])
+        if len(packets) > 1:
+            flow.packets += packets[1:]
         return flow
 
     def test_multiple_flows_predict(self):

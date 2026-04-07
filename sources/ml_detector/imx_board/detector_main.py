@@ -21,6 +21,7 @@ with open(_CONFIG_PATH, "rb") as f:
 DEFAULT_SOCKET_PATH = _CONFIG["default"]["socket_path"]
 INFERENCE_INTERVAL = _CONFIG["default"]["inference_interval"]
 PACKET_TIMEOUT = _CONFIG["default"]["packet_timeout"]
+PACKET_TIMEOUT = PACKET_TIMEOUT * 1_000_000_000  # Convert to nanoseconds
 IPC_TIMEOUT = _CONFIG["default"]["ipc_timeout"]
 MAX_BATCH_SIZE = _CONFIG["default"]["max_batch_size"]
 
@@ -92,14 +93,15 @@ class DDoSDetector:
     def _lookup_flow_tuple_by_flow_id(self, flow_id):
         for flow_entry in self.flow_table:
             if flow_entry.flow_id == flow_id:
-                return flow_entry
+                return flow_entry.flow_key
         return None
 
-    def _get_ready_flow(self):
-        cur_ts = time.time()
+    def _get_ready_flows(self):
+        # Get the boot time in nanoseconds
+        cur_ts = time.monotonic_ns()
         ready_flows = list()
         for flow_entry in self.flow_table:
-            if flow_entry.is_ready and cur_ts - flow_entry.first_packet_ts >= PACKET_TIMEOUT:
+            if flow_entry.is_ready and cur_ts - flow_entry.first_packet_time >= PACKET_TIMEOUT:
                 ready_flows.append(flow_entry)
                 flow_entry.is_ready = False
         return ready_flows
@@ -128,6 +130,7 @@ class DDoSDetector:
         logger.info("Detector stopped")
 
     def _reap_completed_proc(self):
+        logger.debug("Reaping completed inference process")
         detect_ret = DetectionResult()
 
         if self._proc is not None and not self._proc.is_alive():
@@ -184,7 +187,7 @@ class DDoSDetector:
 
         self._proc = mp.Process(
             target=run_inference_worker,
-            args=(self.model_name, self.model_path, self.input_shape, self._result_queue)
+            args=(self.model_name, self.model_path, self.input_shape, ready_flows, self._result_queue)
         )
         self._proc.start()
 

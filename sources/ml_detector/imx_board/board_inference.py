@@ -74,8 +74,11 @@ class BaseBoardModel(ABC):
 
     def detect(self, flows):
         """Full detection pipeline: preprocess -> predict -> postprocess"""
+        print("Start preprocess...")
         x_array, label_array = self.preprocess(flows)
+        print("Start predict...")
         y_pred = self.predict(x_array)
+        print("Start postprocess...")
         return self.postprocess(y_pred, label_array)
 
 

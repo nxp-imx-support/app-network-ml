@@ -70,9 +70,8 @@ class DetectionResult:
         bytes_data = b''
         bytes_data += struct.pack('<I', self.ret_size)
         for entry in self.ret_array:
-            bytes_data += struct.pack(entry.FORMAT, entry.src_ip, entry.src_port,
-                                     entry.dst_ip, entry.dst_port, entry.protocol,
-                                     entry.is_attack, entry.confidence)
+            bytes_data += struct.pack(entry.FORMAT, entry.protocol, entry.src_ip, entry.src_port,
+                                     entry.dst_ip, entry.dst_port, entry.is_attack, entry.confidence)
         return bytes_data
 
 class ResultEntry:

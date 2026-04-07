@@ -18,7 +18,7 @@
 #include "ipc/socket_manager.h"
 #include "xdp/xdp_controller.h"
 
-#define DEFAULT_SOCKET_PATH "/tmp/detector.sock"
+#define DEFAULT_SOCKET_PATH "/tmp/imx_ddb.socket"
 #define DEFAULT_WHITELIST_PATH "whitelist.txt"
 #define MAX_WHITELIST_IPS 256
 #define MAX_INTERFACES 2
@@ -38,9 +38,9 @@ static volatile int quit = 0;
 
 static void signal_handler(int sig);
 static void print_usage(const char *prog);
+static void print_detection_result(const detection_result_t *result);
 static int parse_arguments(int argc, char **argv, cli_args_t *args);
 static int load_whitelist_from_config(const char *path);
-static int match_whitelist(const packet_feature_t *feat);
 
 int main(int argc, char **argv)
 {
@@ -101,15 +101,12 @@ int main(int argc, char **argv)
     }
     fprintf(stderr, "ml_detector client connected!\n\n");
 
+    // main loop
     while (!quit) {
         packet_feature_t feat;
 
         if (xdp_read_packet_feature(&feat) < 0) {
             usleep(1000);
-            continue;
-        }
-
-        if (match_whitelist(&feat)) {
             continue;
         }
 
@@ -131,6 +128,7 @@ int main(int argc, char **argv)
             fprintf(stderr, "Failed to receive detection result\n");
             break;
         }
+        print_detection_result(result_ptr);
 
         result_entry_t *entries = (result_entry_t *)(result_buffer + sizeof(uint32_t));
         for (uint32_t i = 0; i < result_ptr->ret_size; i++) {
@@ -173,6 +171,25 @@ static void print_usage(const char *prog)
     fprintf(stderr, "\nExamples:\n");
     fprintf(stderr, "  %s -i eth0 -m eth0 -p xdp_forward_kern.o          # Single interface (echo + ML)\n", prog);
     fprintf(stderr, "  %s -i eth0 eth1 -m eth0 -p xdp_forward_kern.o    # Dual interface (eth0: ML, eth1: forward)\n", prog);
+}
+
+static void print_detection_result(const detection_result_t *result)
+{
+    printf("  ret_size:   %u\n", result->ret_size);
+    for (uint32_t i = 0; i < result->ret_size; i++) {
+        const result_entry_t *entry = &result->entries[i];
+        printf("  entry[%u]: protocol=%u src_ip=%u.%u.%u.%u:%u -> dst_ip=%u.%u.%u.%u:%u is_attack=%u confidence=%u\n",
+               i,
+               entry->protocol,
+               (entry->src_ip >> 0) & 0xFF, (entry->src_ip >> 8) & 0xFF,
+               (entry->src_ip >> 16) & 0xFF, (entry->src_ip >> 24) & 0xFF,
+               entry->src_port,
+               (entry->dst_ip >> 0) & 0xFF, (entry->dst_ip >> 8) & 0xFF,
+               (entry->dst_ip >> 16) & 0xFF, (entry->dst_ip >> 24) & 0xFF,
+               entry->dst_port,
+               entry->is_attack,
+               entry->confidence);
+    }
 }
 
 static int parse_arguments(int argc, char **argv, cli_args_t *args)
@@ -269,14 +286,4 @@ static int load_whitelist_from_config(const char *path)
 
     fclose(f);
     return count;
-}
-
-static int match_whitelist(const packet_feature_t *feat)
-{
-    for (int i = 0; i < whitelist_count; i++) {
-        if (whitelist_ips[i] == feat->src_ip || whitelist_ips[i] == feat->dst_ip) {
-            return 1;
-        }
-    }
-    return 0;
 }
