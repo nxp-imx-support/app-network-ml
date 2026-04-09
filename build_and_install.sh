@@ -24,8 +24,10 @@ echo "Build packets controller completed"
 echo "Installing..."
 install -d ${TARGET_PATH}/packets_controller
 install -d ${TARGET_PATH}/ml_detector/model
+install -d ${TARGET_PATH}/logs
 
-install -m 544 sources/tools/setup_network_bridge.sh ${TARGET_PATH}
+# install -m 544 sources/tools/setup_network_bridge.sh ${TARGET_PATH}
+install -m 544 sources/tools/run_imx-ddb.py ${TARGET_PATH}
 
 install -m 544 sources/packets_controller/build/packets_controller_main ${TARGET_PATH}/packets_controller/packets_controller_main
 install -m 544 sources/packets_controller/xdp/xdp_forward_kern.o ${TARGET_PATH}/packets_controller/xdp_forward_kern.o
