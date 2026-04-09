@@ -29,6 +29,7 @@ install -m 544 sources/tools/setup_network_bridge.sh ${TARGET_PATH}
 
 install -m 544 sources/packets_controller/build/packets_controller_main ${TARGET_PATH}/packets_controller/packets_controller_main
 install -m 544 sources/packets_controller/xdp/xdp_forward_kern.o ${TARGET_PATH}/packets_controller/xdp_forward_kern.o
+install -m 644 sources/packets_controller/whitelist.txt ${TARGET_PATH}/packets_controller/
 install -m 644 sources/ml_detector/imx_board/*.py ${TARGET_PATH}/ml_detector
 install -m 644 sources/ml_detector/imx_board/detector.toml ${TARGET_PATH}/ml_detector
 install -m 644 output/LUCID-ddos-CIC2019-quant-int8.tflite ${TARGET_PATH}/ml_detector/model/

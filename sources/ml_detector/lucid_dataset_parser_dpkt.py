@@ -24,14 +24,11 @@ import random
 
 DOS2019_FLOWS = {'attackers': ['172.16.0.5'], 'victims': ['192.168.50.1', '192.168.50.4']}
 
-PROSTACK_ETH = 1
-PROSTACK_IP = 1 << 1
-PROSTACK_TCP = 1 << 2
-PROSTACK_UDP = 1 << 3
-PROSTACK_ICMP = 1 << 4
-PROSTACK_SSL = 1 << 5
-PROSTACK_HTTP = 1 << 6
-PROSTACK_DNS = 1 << 7
+PROSTACK_IP = 2048
+PROSTACK_TCP = 6
+PROSTACK_UDP = 17
+PROSTACK_ICMP = 1
+
 
 flow_len_threshold = 1
 win_time_period = 10
@@ -196,7 +193,7 @@ def process_pcap(pcap_file, log_list):
                 continue
             pkt_features[FeatureList.ip_flags] = ip_layer._flags_offset >> 13
             pkt_features[FeatureList.highest_layer] = PROSTACK_IP
-            pkt_features[FeatureList.protocols_stack] = PROSTACK_ETH + PROSTACK_IP
+            pkt_features[FeatureList.protocols_stack] = PROSTACK_IP
         # UDP
         if isinstance(ip_layer.data, dpkt.udp.UDP):
             tfkey.proto = dpkt.ip.IP_PROTO_UDP
@@ -259,9 +256,24 @@ def process_pcap(pcap_file, log_list):
 def normalize_packet(pkt):
     ret_arr = [0.0] * 11
     for i in range(1, 11):
-        ret_arr[i] = 1 - (feature_value_range[i][1] - pkt[i]) / (feature_value_range[i][1] - feature_value_range[i][0])
+        ret_arr[i] = (pkt[i]- feature_value_range[i][0]) / (feature_value_range[i][1] - feature_value_range[i][0])
     return ret_arr
 
+def print_pkt_fields(pkt):
+    print("=" * 60)
+    print("packet features:")
+    print("diff_ts={}".format(pkt[0]))
+    print("l2_length={}".format(pkt[1]))
+    print("ip_flags={}".format(pkt[2]))
+    print("l4_type={}".format(pkt[3]))
+    print("l3_type+l4_type={}".format(pkt[4]))
+    print("tcp_length={}".format(pkt[5]))
+    print("tcp_ack={}".format(pkt[6]))
+    print("tcp_flags={}".format(pkt[7]))
+    print("tcp_win={}".format(pkt[8]))
+    print("udp_len={}".format(pkt[9]))
+    print("icmp_type={}".format(pkt[10]))
+    print("=" * 60)
 
 def transfer_to_feature(flow, feature_list):
     pkt_num = flow.pkt_cnt
@@ -276,6 +288,7 @@ def transfer_to_feature(flow, feature_list):
         # if pkt_idx % 20 == 0:
         #     print("In transfer_to_feature, pkt_idx: {}".format(pkt_idx))
         pkt = flow.pkt_list[pkt_idx]
+        # print_pkt_fields(pkt)
         now = pkt[0]
         diff = now - start_ts
 

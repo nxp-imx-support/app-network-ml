@@ -58,6 +58,8 @@ class DDoSDetector:
         self._proc = None
         self._result_queue = Queue()
 
+        self.total_pkt = 0
+
         self._setup_signal_handlers()
 
     def _setup_signal_handlers(self):
@@ -116,8 +118,11 @@ class DDoSDetector:
 
         while self.running:
             packet = self._process_incoming_packets()
-            if packet is not None:
-                self._reap_completed_proc()
+            if packet is None:
+                continue
+            
+            self.total_pkt += 1
+            self._reap_completed_proc()
 
             if time.time() - last_inference_time >= INFERENCE_INTERVAL:
                 if self._proc is None:
@@ -153,6 +158,7 @@ class DDoSDetector:
                             logger.warning("Flow ID %d not found in flow table", flow_id)
 
         try:
+            # logger.debug("Prepare to send detection results: {} entries, total packets: {}".format(detect_ret.ret_size, self.total_pkt))
             self.ipc.send_detection_result(detect_ret)
         except (ConnectionError, BrokenPipeError) as e:
             logger.info("Peer closed connection: %s", e)
@@ -189,9 +195,11 @@ class DDoSDetector:
             args=(self.model_name, self.model_path, self.input_shape, ready_flows, self._result_queue)
         )
         self._proc.start()
+        logger.info("Start inference process with PID: {}".format(self._proc.pid))
 
     def _cleanup(self):
         """Cleanup resources before exit"""
+        logger.info("Cleaning up detector resources")
         if self._proc is not None and self._proc.is_alive():
             self._proc.terminate()
             self._proc.join()

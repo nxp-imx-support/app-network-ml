@@ -53,6 +53,12 @@ class BaseBoardModel(ABC):
         output_zero_point = output_desc['quantization'][1]
 
         Y_pred = []
+        # Save x_data for debugging
+        debug_array = x_data.reshape((-1, 11))
+        import time
+        ts = time.time()
+        np.savetxt("/root/x_data_debug_{}.csv".format(ts), debug_array, delimiter=",")
+
         for vec in x_data:
             input_data = np.expand_dims(vec, axis=0)
             input_data = np.round(input_data / input_scale + input_zero_point)
@@ -102,15 +108,14 @@ class LucidCNNBoardModel(BaseBoardModel):
             [0, 0xFF]
         ]
     
-    def _packet_features_to_array(self, pre_packet, packet):
+    def _packet_features_to_array(self, base_packet, packet):
         """
         Convert packet object to a feature array of shape (11,)
         """
 
         features = np.zeros(11, dtype=np.float32)
-        ts_diff = packet.timestamp - pre_packet.timestamp
-        features[0] = normalize_num(ts_diff, 
-                                    self.feature_value_range[0][0], self.feature_value_range[0][1])
+        ts_diff = (packet.timestamp - base_packet.timestamp) / 1e+9 # Convert to secends
+        features[0] = (self.feature_value_range[0][1] - ts_diff) / (self.feature_value_range[0][1] - self.feature_value_range[0][0])
         features[1] = normalize_num(packet.l2_length, 
                                     self.feature_value_range[1][0], self.feature_value_range[1][1])
         features[2] = normalize_num(packet.ip_flags, 
@@ -139,6 +144,20 @@ class LucidCNNBoardModel(BaseBoardModel):
         
         features[10] = normalize_num(packet.icmp_type,
                                      self.feature_value_range[10][0], self.feature_value_range[10][1])
+        print("=" * 60)
+        print("packet features:")
+        print("diff_ts={}".format(ts_diff))
+        print("l2_length={}".format(packet.l2_length))
+        print("ip_flags={}".format(packet.ip_flags))
+        print("l4_type={}".format(packet.l4_type))
+        print("l3_type+l4_type={}".format(packet.l3_type + packet.l4_type))
+        print("tcp_length={}".format(packet.l4_length))
+        print("tcp_ack={}".format(packet.tcp_ack))
+        print("tcp_flags={}".format(packet.tcp_flags))
+        print("tcp_win={}".format(packet.tcp_win))
+        print("udp_len={}".format(packet.l4_length))
+        print("icmp_type={}".format(packet.icmp_type))
+        print("=" * 60)
         return features
 
     def _cut_flow_to_slices(self, packets):
@@ -159,7 +178,7 @@ class LucidCNNBoardModel(BaseBoardModel):
             #     print("In transfer_to_feature, pkt_idx: {}".format(pkt_idx))
             pkt = packets[pkt_idx]
             now = pkt.timestamp
-            diff = now - start_ts
+            diff = (now - start_ts) / 1e+9
 
             # Require a new time window.
             if diff - win_time_period > 1e-6:
@@ -200,9 +219,8 @@ class LucidCNNBoardModel(BaseBoardModel):
                     pkt_feature_vector = np.zeros(11, dtype=np.float32)
                 else:
                     if idx == 0:
-                        pre_pkt = pkt
-                    pkt_feature_vector = self._packet_features_to_array(pre_pkt, pkt)
-                    pre_pkt = pkt
+                        base_pkt = pkt
+                    pkt_feature_vector = self._packet_features_to_array(base_pkt, pkt)
                 slice_feature_vector.append(pkt_feature_vector)
             self.x_data.append(slice_feature_vector)
             self.x_label.append(flow_id)
@@ -229,6 +247,8 @@ class LucidCNNBoardModel(BaseBoardModel):
         Returns:
             List of (is_attack, confidence) tuples, one per unique flow_id
         """
+        print("prediction result shape: {}".format(prediction.shape))
+        print("label_array shape: {}".format(label_array.shape))
         unique_flow_ids = np.unique(label_array)
         results = []
 
