@@ -1,3 +1,8 @@
 # Whitelist file - one IP address per line
 # If packet's src_ip or dst_ip matches any listed IP, the packet will be skipped
 127.0.0.1
+224.0.0.0
+224.0.0.22
+239.255.255.250
+0.0.0.0
+255.255.255.255

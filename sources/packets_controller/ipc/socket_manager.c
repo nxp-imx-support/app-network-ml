@@ -93,15 +93,15 @@ int recv_tlv_message(int fd, uint16_t *type, void *buffer, uint32_t buffer_size)
     if (header.length > buffer_size) return -1;
     if (header.length > 0 && read(fd, buffer, header.length) != header.length) return -1;
 
-    printf("DEBUG recv_tlv: header=");
-    for (int i = 0; i < TLV_HEADER_SIZE; i++) {
-        printf("%02x", ((uint8_t *)&header)[i]);
-    }
-    printf(" payload=");
-    for (uint32_t i = 0; i < header.length; i++) {
-        printf("%02x", ((uint8_t *)buffer)[i]);
-    }
-    printf("\n");
+    // printf("DEBUG recv_tlv: header=");
+    // for (int i = 0; i < TLV_HEADER_SIZE; i++) {
+    //     printf("%02x", ((uint8_t *)&header)[i]);
+    // }
+    // printf(" payload=");
+    // for (uint32_t i = 0; i < header.length; i++) {
+    //     printf("%02x", ((uint8_t *)buffer)[i]);
+    // }
+    // printf("\n");
 
     return header.length;
 }

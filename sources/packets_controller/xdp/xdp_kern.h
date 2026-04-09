@@ -27,7 +27,7 @@ struct {
 
 struct {
     __uint(type, BPF_MAP_TYPE_RINGBUF);
-    __uint(max_entries, 4096 * 2);
+    __uint(max_entries, 4096 * 200);
 } packet_ringbuf SEC(".maps");
 
 struct {
@@ -43,3 +43,5 @@ struct {
     __type(key, __u32);
     __type(value, __u32);
 } monitor_ifindex_map SEC(".maps");
+
+__u16 pass_ports[] = {137, 138, 139};

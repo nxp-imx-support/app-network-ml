@@ -23,6 +23,8 @@
 #define MAX_WHITELIST_IPS 256
 #define MAX_INTERFACES 2
 
+// #define DEBUG_PKT
+
 typedef struct {
     const char *ifnames[MAX_INTERFACES];
     int ifcount;
@@ -41,6 +43,14 @@ static void print_usage(const char *prog);
 static void print_detection_result(const detection_result_t *result);
 static int parse_arguments(int argc, char **argv, cli_args_t *args);
 static int load_whitelist_from_config(const char *path);
+
+#ifdef DEBUG_PKT
+static void print_packet_feature(const packet_feature_t *feat);
+#endif
+
+static int recv_pkt_cnt = 0;
+static int sent_pkt_cnt = 0;
+static int detection_cnt = 0;
 
 int main(int argc, char **argv)
 {
@@ -109,6 +119,11 @@ int main(int argc, char **argv)
             usleep(1000);
             continue;
         }
+        recv_pkt_cnt++;
+
+        #ifdef DEBUG_PKT
+        print_packet_feature(&feat);
+        #endif
 
         if (send_packet_feature(client_fd, &feat) < 0) {
             if (errno == EINTR) {
@@ -117,6 +132,8 @@ int main(int argc, char **argv)
             fprintf(stderr, "Failed to send packet feature\n");
             break;
         }
+        detection_cnt++;
+        // printf("recv pkt: %d, detection: %d\n", recv_pkt_cnt, detection_cnt);
 
         uint8_t result_buffer[MAX_DETECTION_RESULT_SIZE];
         detection_result_t *result_ptr = (detection_result_t *)result_buffer;
@@ -128,7 +145,8 @@ int main(int argc, char **argv)
             fprintf(stderr, "Failed to receive detection result\n");
             break;
         }
-        print_detection_result(result_ptr);
+        if (result_ptr->ret_size > 0)
+            print_detection_result(result_ptr);
 
         result_entry_t *entries = (result_entry_t *)(result_buffer + sizeof(uint32_t));
         for (uint32_t i = 0; i < result_ptr->ret_size; i++) {
@@ -136,6 +154,7 @@ int main(int argc, char **argv)
                 xdp_update_blacklist(entries[i].src_ip);
             }
         }
+
     }
 
     fprintf(stderr, "\nShutting down...\n");
@@ -280,3 +299,43 @@ static int load_whitelist_from_config(const char *path)
     fclose(f);
     return count;
 }
+
+#ifdef DEBUG_PKT
+static void print_packet_feature(const packet_feature_t *feat)
+{
+    printf("=== Packet Feature ===\n");
+    printf("  timestamp:   %lu\n", (unsigned long)feat->timestamp);
+    printf("  src_mac:     %02x:%02x:%02x:%02x:%02x:%02x\n",
+           feat->src_mac[0], feat->src_mac[1], feat->src_mac[2],
+           feat->src_mac[3], feat->src_mac[4], feat->src_mac[5]);
+    printf("  dst_mac:     %02x:%02x:%02x:%02x:%02x:%02x\n",
+           feat->dst_mac[0], feat->dst_mac[1], feat->dst_mac[2],
+           feat->dst_mac[3], feat->dst_mac[4], feat->dst_mac[5]);
+    printf("  l3_type:     %u\n", feat->l3_type);
+    printf("  l2_length:   %u\n", feat->l2_length);
+    printf("  src_ip:      %u.%u.%u.%u\n",
+           (feat->src_ip >> 0) & 0xFF,
+           (feat->src_ip >> 8) & 0xFF,
+           (feat->src_ip >> 16) & 0xFF,
+           (feat->src_ip >> 24) & 0xFF);
+    printf("  dst_ip:      %u.%u.%u.%u\n",
+           (feat->dst_ip >> 0) & 0xFF,
+           (feat->dst_ip >> 8) & 0xFF,
+           (feat->dst_ip >> 16) & 0xFF,
+           (feat->dst_ip >> 24) & 0xFF);
+    printf("  ip_flags:    0x%02x\n", feat->ip_flags);
+    printf("  l4_type:     %u (6=TCP, 17=UDP, 1=ICMP)\n", feat->l4_type);
+    printf("  l3_length:   %u\n", feat->l3_length);
+    printf("  src_port:    %u\n", feat->src_port);
+    printf("  dst_port:    %u\n", feat->dst_port);
+    printf("  tcp_flags:   0x%02x\n", feat->tcp_flags);
+    printf("  tcp_ack:     %u\n", (unsigned int)feat->tcp_ack);
+    printf("  tcp_win:     %u\n", feat->tcp_win);
+    printf("  icmp_type:   %u\n", feat->icmp_type);
+    printf("  l4_length:   %u\n", feat->l4_length);
+    printf("  pad:         %02x %02x %02x %02x %02x %02x %02x\n",
+           feat->pad[0], feat->pad[1], feat->pad[2], feat->pad[3],
+           feat->pad[4], feat->pad[5], feat->pad[6]);
+    printf("\n");
+}
+#endif

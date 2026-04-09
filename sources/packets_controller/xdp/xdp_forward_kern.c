@@ -55,6 +55,8 @@ int xdp_forward_prog(struct xdp_md *ctx)
     __u16 dst_port = 0;
     __u16 tcp_flags = 0;
     __u8 icmp_type = 0;
+    __u32 tcp_ack_seq = 0;
+    __u32 tcp_win = 0;
 
     if (ip->protocol == IPPROTO_TCP) {
         struct tcphdr *tcp = (void *)ip + (ip->ihl * 4);
@@ -63,6 +65,8 @@ int xdp_forward_prog(struct xdp_md *ctx)
         src_port = bpf_ntohs(tcp->source);
         dst_port = bpf_ntohs(tcp->dest);
         __u8 flags_byte = ((__u8 *)tcp)[13];
+        tcp_ack_seq = tcp->ack_seq;
+        tcp_win = bpf_ntohs(tcp->window);
         tcp_flags = 0x3F & flags_byte;
     } else if (ip->protocol == IPPROTO_UDP) {
         struct udphdr *udp = (void *)ip + (ip->ihl * 4);
@@ -75,6 +79,12 @@ int xdp_forward_prog(struct xdp_md *ctx)
         if ((void *)(icmp + 1) > data_end)
             return XDP_PASS;
         icmp_type = icmp->type;
+    } else 
+        return XDP_PASS;
+
+    for (__u32 i = 0; i < sizeof(pass_ports) / sizeof(pass_ports[0]); i++) {
+        if (dst_port == pass_ports[i] || src_port == pass_ports[i])
+            return XDP_PASS;
     }
 
     if (match_whitelist_flow(ip->saddr, ip->daddr))
@@ -92,20 +102,20 @@ int xdp_forward_prog(struct xdp_md *ctx)
             pkt->timestamp = bpf_ktime_get_ns();
             __builtin_memcpy(pkt->src_mac, eth->h_source, MAC_ADDRESS_LENGTH);
             __builtin_memcpy(pkt->dst_mac, eth->h_dest, MAC_ADDRESS_LENGTH);
-            pkt->l3_type = eth->h_proto;
+            pkt->l3_type = bpf_ntohs(eth->h_proto);
             pkt->l2_length = ctx->data_end - ctx->data;
             pkt->src_ip = ip->saddr;
             pkt->dst_ip = ip->daddr;
-            pkt->ip_flags = ip->frag_off;
+            pkt->ip_flags = (bpf_ntohs(ip->frag_off) >> 13);
             pkt->l4_type = ip->protocol;
-            pkt->l3_length = ip->tot_len;
+            pkt->l3_length = bpf_ntohs(ip->tot_len);
             pkt->src_port = src_port;
             pkt->dst_port = dst_port;
             pkt->tcp_flags = tcp_flags;
-            pkt->tcp_ack = 0;
-            pkt->tcp_win = 0;
+            pkt->tcp_ack = tcp_ack_seq;
+            pkt->tcp_win = tcp_win;
             pkt->icmp_type = icmp_type;
-            pkt->l4_length = ip->tot_len - (ip->ihl * 4);
+            pkt->l4_length = pkt->l3_length - (ip->ihl * 4);
             bpf_ringbuf_submit(pkt, 0);
         }
     }

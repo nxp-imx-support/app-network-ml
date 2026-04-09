@@ -13,7 +13,7 @@
 // TLV Header: Type(2B) + Length(4B)
 #define TLV_HEADER_SIZE 6
 
-#define MAX_RESULT_ENTRIES 1024
+#define MAX_RESULT_ENTRIES 100000
 #define MAX_DETECTION_RESULT_SIZE (sizeof(uint32_t) + MAX_RESULT_ENTRIES * sizeof(result_entry_t))
 
 typedef struct {
