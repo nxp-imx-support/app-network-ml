@@ -150,7 +150,8 @@ int main(int argc, char **argv)
 
         result_entry_t *entries = (result_entry_t *)(result_buffer + sizeof(uint32_t));
         for (uint32_t i = 0; i < result_ptr->ret_size; i++) {
-            if (entries[i].is_attack) {
+            // Only confidence > 30, is_attack=1 will trigger blacklist update
+            if (entries[i].is_attack && entries[i].confidence > 30) {
                 xdp_update_blacklist(entries[i].src_ip);
             }
         }
