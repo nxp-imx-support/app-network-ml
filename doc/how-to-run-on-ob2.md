@@ -34,7 +34,31 @@ cd bin
 ```
 
 ## Step 3: Build board deploy package
-Install the yocto toolchain in your host syste­m and set the TOOLCHAIN variable, for example:
+
+### Build environment
+**LLVM-21**
+The LLVM-21 and clang-21 need to be installed on your host system.
+```bash
+wget https://apt.llvm.org/llvm.sh
+chmod +x llvm.sh
+sudo ./llvm.sh 21
+
+apt update
+apt install -y llvm-21 clang-21 lld-21 lldb-21
+
+update-alternatives --install /usr/bin/llvm-link llvm-link /usr/bin/llvm-link-21 100
+update-alternatives --install /usr/bin/clang clang /usr/bin/clang-21 100
+update-alternatives --install /usr/bin/llc llc /usr/bin/llc-21 100
+
+llvm-link --version
+clang --version
+```
+
+**Yocto Toolchain**
+Install the yocto toolchain in your host syste­m.
+
+### Build steps
+Set the TOOLCHAIN variable, for example:
 ```bash
 TOOLCHAIN_PATH=/opt/fsl-imx-xwayland/6.12-styhead/environment-setup-armv8a-poky-linux ./build_and_install.sh
 ```
