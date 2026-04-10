@@ -49,7 +49,6 @@ static void print_packet_feature(const packet_feature_t *feat);
 #endif
 
 static int recv_pkt_cnt = 0;
-static int sent_pkt_cnt = 0;
 static int detection_cnt = 0;
 
 int main(int argc, char **argv)

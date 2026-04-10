@@ -36,7 +36,7 @@ cd bin
 ## Step 3: Build board deploy package
 Install the yocto toolchain in your host syste­m and set the TOOLCHAIN variable, for example:
 ```bash
-TOOLCHAIN=/opt/fsl-imx-xwayland/6.12-styhead/environment-setup-armv8a-poky-linux ./build_and_install.sh
+TOOLCHAIN_PATH=/opt/fsl-imx-xwayland/6.12-styhead/environment-setup-armv8a-poky-linux ./build_and_install.sh
 ```
 
 You will get the `board_deploy` folder. Then, copy this folder to the OrangeBox2.0 board.
