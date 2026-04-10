@@ -15,6 +15,4 @@ CLAUDE.md
 AGENTS.md
 SW-requirements.md
 architecture.png
-*.tflite
-*.keras
 *.csv
