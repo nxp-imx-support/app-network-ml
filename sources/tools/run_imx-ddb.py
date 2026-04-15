@@ -9,7 +9,6 @@ def handle_sigint(sig, frame):
     global quit_flag
     print("Capture Ctrl-C signal")
     quit_flag = True
-    sys.exit(0)
 
 def setup_network_bridge():
     port_0 = "swp0"
@@ -29,6 +28,17 @@ def setup_network_bridge():
     subprocess.run(f"ip link set {bridge_name} up", shell=True)
     subprocess.run(f"ip link set {port_0} up", shell=True)
     subprocess.run(f"ip link set {port_1} up", shell=True)
+    time.sleep(2)
+
+def remove_network_bridge():
+    bridge_name = "br0"
+    port_0 = "swp0"
+    port_1 = "eth1"
+
+    print("Removing bridge")
+    subprocess.run(f"ip link set dev {port_0} nomaster", shell=True)
+    subprocess.run(f"ip link set dev {port_1} nomaster", shell=True)
+    subprocess.run(f"ip link del {bridge_name}", shell=True)
     time.sleep(2)
 
 if __name__ == '__main__':
@@ -57,5 +67,7 @@ if __name__ == '__main__':
 
     pkt_ctl_log.close()
     ml_detector_log.close()
+
+    remove_network_bridge()
 
     print("All exit. You can see runtime logs in logs/ folder")

@@ -53,11 +53,6 @@ class BaseBoardModel(ABC):
         output_zero_point = output_desc['quantization'][1]
 
         Y_pred = []
-        # Save x_data for debugging
-        debug_array = x_data.reshape((-1, 11))
-        import time
-        ts = time.time()
-        np.savetxt("/root/x_data_debug_{}.csv".format(ts), debug_array, delimiter=",")
 
         for vec in x_data:
             input_data = np.expand_dims(vec, axis=0)

@@ -14,6 +14,7 @@ iface_1 = "eth0"
 iface_2 = "eth1"
 victim_ip = "10.0.1.10/24"
 default_ip = "10.0.1.9/24"
+attack_opt = "--target {} --src-start 10.0.1.100 --src-end 10.0.1.200".format(victim_ip.split('/')[0])
 
 def init_network_ns():
     """
@@ -37,6 +38,7 @@ def init_network_ns():
     ip netns exec victim_net python3 simple_webserver.py
     """
     subprocess.run("ip link set {} up".format(iface_1), shell=True)
+    subprocess.run("ip addr flush dev {}".format(iface_1), shell=True)
     subprocess.run("ip addr add {} dev {}".format(default_ip, iface_1), shell=True)
     subprocess.run("ip netns add victim_net", shell=True)
     subprocess.run("ip link set {} netns victim_net".format(iface_2), shell=True)
@@ -44,10 +46,20 @@ def init_network_ns():
     subprocess.run("ip netns exec victim_net ip addr add {} dev {}".format(victim_ip, iface_2), shell=True)
     time.sleep(2)
 
+def remove_netns():
+    subprocess.run("ip netns del victim_net", shell=True)
+
 def start_victim_server():
     global victim_server_process
     victim_server_process = subprocess.Popen("ip netns exec victim_net python3 simple_webserver.py", shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
-    time.sleep(1)
+    time.sleep(2)
+    return victim_server_process.poll() is None
+
+def start_dos_attack():
+    global attack_process
+    attack_process = subprocess.Popen("python3 syn_flood_attack.py {}".format(attack_opt), shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+    time.sleep(2)
+    return attack_process.poll() is None
 
 def test_victim_conn():
     host_ip = victim_ip.split('/')[0]
@@ -66,6 +78,7 @@ def main(stdscr):
     
     netns_initialized = False
     victim_server_running = False
+    attack_process_running = False
     status_message = "Ready"
 
     while True:
@@ -77,9 +90,10 @@ def main(stdscr):
             stdscr.addstr(i + 2, 2, text, mode)
 
         height, width = stdscr.getmaxyx()
-        status_bar = "NetNS: {} | Victim Server: {} | {}".format(
+        status_bar = "NetNS: {} | Victim Server: {} | Attacker process: {} | {}".format(
             "Initialized" if netns_initialized else "Not Initialized",
             "Running" if victim_server_running else "Stopped",
+            "Running" if attack_process_running else "Stopped",
             status_message
         )
         stdscr.addstr(height - 1, 0, status_bar[:width - 1], curses.A_REVERSE)
@@ -96,9 +110,23 @@ def main(stdscr):
                 netns_initialized = True
                 status_message = "Network namespace initialized"
             elif current == 1:
-                start_victim_server()
-                victim_server_running = True
-                status_message = "Victim server started"
+                if start_victim_server():
+                    victim_server_running = True
+                    status_message = "Victim server started"
+                else:
+                    status_message = "Failed to start victim server"
+            elif current == 2:
+                if start_dos_attack():
+                    attack_process_running = True
+                    status_message = "DoS attack started"
+                else:
+                    status_message = "Failed to start DoS attack"
+            elif current == 3:
+                if attack_process:
+                    attack_process.send_signal(signal.SIGINT)
+                    attack_process.wait()
+                attack_process_running = False
+                status_message = "DoS attack stopped"
             elif current == 4:
                 if test_victim_conn():
                     status_message = "Connection test successfully."
@@ -115,6 +143,7 @@ def main(stdscr):
     if attack_process:
         attack_process.send_signal(signal.SIGINT)
         attack_process.wait()
+    remove_netns()
 
 
 if __name__ == '__main__':
