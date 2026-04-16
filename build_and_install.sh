@@ -25,6 +25,7 @@ echo "Installing..."
 install -d ${TARGET_PATH}/packets_controller
 install -d ${TARGET_PATH}/ml_detector/model
 install -d ${TARGET_PATH}/logs
+install -d ${TARGET_PATH}/webui
 
 # install -m 544 sources/tools/setup_network_bridge.sh ${TARGET_PATH}
 install -m 544 sources/tools/run_imx-ddb.py ${TARGET_PATH}
@@ -35,5 +36,6 @@ install -m 644 sources/packets_controller/whitelist.txt ${TARGET_PATH}/packets_c
 install -m 644 sources/ml_detector/imx_board/*.py ${TARGET_PATH}/ml_detector
 install -m 644 sources/ml_detector/imx_board/detector.toml ${TARGET_PATH}/ml_detector
 install -m 644 output/LUCID-ddos-CIC2019-quant-int8.tflite ${TARGET_PATH}/ml_detector/model/
+cp -r sources/webui/* ${TARGET_PATH}/webui/
 
 echo "Done"

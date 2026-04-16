@@ -1,0 +1,159 @@
+<!--
+# Copyright 2026 NXP
+# SPDX-License-Identifier: BSD-3-Clause   
+-->
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>i.MX DDoS Blocker Dashboard</title>
+    
+    <!-- ECharts -->
+    <script src="/static/lib/echarts.min.js"></script>
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" type="text/css" href="/static/css/style.css">
+    <link rel="shortcut icon" href="/static/img/favicon.ico" type="image/x-icon">
+</head>
+<body>
+    <div id="header">
+        <div id="return-button">
+            <img src="/static/img/back.png" style="height: 25px; margin: 10px 0px;" alt="Back" onclick="window.history.back()">
+        </div>
+        <div id="nxp-logo">
+            <img src="/static/img/nxp_logo.png" style="height: 48px;" alt="NXP Logo">
+        </div>
+        <div class="nav_container">
+            <input type="checkbox" name="" id="check">
+            <div class="nav-btn">
+                <div class="nav-links">
+                    <ul>
+                        <li class="nav-link" style="--i: .6s">
+                            <a href="/">Dashboard</a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            <div class="hamburger-menu-container">
+                <div class="hamburger-menu">
+                    <div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="board-name">
+        <p>i.MX DDoS Blocker</p>
+        <p id="board-name-line2">Real-time Dashboard</p>
+    </div>
+    
+    <div class="charts-container">
+        <!-- XDP Statistics -->
+        <div id="box1" class="box">
+            <div id="box1-title" class="box-title">XDP Statistics</div>
+            <div id="xdp-stats-content">
+                <div class="stat-item">
+                    <span class="stat-label">RX Packets:</span>
+                    <span id="xdp-rx" class="stat-value">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">PASS Packets:</span>
+                    <span id="xdp-pass" class="stat-value">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">DROP Packets:</span>
+                    <span id="xdp-drop" class="stat-value">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Submit to ML:</span>
+                    <span id="xdp-submit" class="stat-value">0</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- System Resources -->
+        <div id="box2" class="box">
+            <div id="box2-title" class="box-title">System Resources</div>
+            <div id="system-stats-content">
+                <div class="stat-item">
+                    <span class="stat-label">CPU Usage:</span>
+                    <span id="cpu-percent" class="stat-value">0%</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">RAM Usage:</span>
+                    <span id="ram-percent" class="stat-value">0%</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">RAM Used:</span>
+                    <span id="ram-used" class="stat-value">0 MB</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">RAM Total:</span>
+                    <span id="ram-total" class="stat-value">0 MB</span>
+                </div>
+            </div>
+            
+            <!-- CPU Chart -->
+            <div id="cpu-chart" class="mini-chart"></div>
+            <!-- RAM Chart -->
+            <div id="ram-chart" class="mini-chart"></div>
+        </div>
+        
+        <!-- Blacklist -->
+        <div id="box3" class="box">
+            <div id="box3-title" class="box-title">Blacklist</div>
+            <div id="blacklist-content">
+                <div class="stat-item">
+                    <span class="stat-label">IPs Blocked:</span>
+                    <span id="blacklist-count" class="stat-value">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Total Updates:</span>
+                    <span id="blacklist-updates" class="stat-value">0</span>
+                </div>
+            </div>
+            
+            <!-- Scrollable IP list -->
+            <div id="blacklist-ips-container" class="blacklist-ips-container">
+                <div id="blacklist-ips-list">
+                    <div class="blacklist-ip-item">No blocked IPs</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Network I/O -->
+        <div id="box4" class="box">
+            <div id="box4-title" class="box-title">Network I/O</div>
+            <div id="network-stats-content">
+                <div class="stat-item">
+                    <span class="stat-label">RX Bytes:</span>
+                    <span id="net-rx" class="stat-value">0 MB</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">TX Bytes:</span>
+                    <span id="net-tx" class="stat-value">0 MB</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">RX Packets:</span>
+                    <span id="net-rx-packets" class="stat-value">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">TX Packets:</span>
+                    <span id="net-tx-packets" class="stat-value">0</span>
+                </div>
+            </div>
+            
+            <!-- Network Chart -->
+            <div id="network-chart" class="mini-chart"></div>
+        </div>
+    </div>
+    
+    <!-- Status bar -->
+    <div id="status-bar">
+        <span id="status-text">Last Update: Never</span>
+    </div>
+
+    <script src="/static/js/dashboard.js"></script>
+</body>
+</html>
