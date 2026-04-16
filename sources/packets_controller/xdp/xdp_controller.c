@@ -12,6 +12,7 @@
 #include <errno.h>
 #include <net/if.h>
 #include <linux/if_link.h>
+#include <sys/sysinfo.h>
 
 #include <bpf/bpf.h>
 #include <bpf/libbpf.h>
@@ -28,6 +29,7 @@ static int blacklist_map_fd = -1;
 static int ifindex_map_fd = -1;
 static int monitor_ifindex_map_fd = -1;
 static int ringbuf_fd = -1;
+static int stats_map_fd = -1;
 static struct ring_buffer *rb = NULL;
 static packet_feature_t pending_pkt;
 static volatile int has_pending = 0;
@@ -126,6 +128,15 @@ int xdp_init(const char *ifnames[], int ifcount_arg, const char *monitor_ifname,
         return -1;
     }
     monitor_ifindex_map_fd = bpf_map__fd(map);
+
+    map = bpf_object__find_map_by_name(obj, "stats_map");
+    if (!map) {
+        fprintf(stderr, "XDP: Failed to find stats_map\n");
+        bpf_object__close(obj);
+        obj = NULL;
+        return -1;
+    }
+    stats_map_fd = bpf_map__fd(map);
 
     prog = bpf_object__find_program_by_name(obj, "xdp_forward_prog");
     if (!prog) {
@@ -228,6 +239,7 @@ void xdp_cleanup(void)
     blacklist_map_fd = -1;
     ifindex_map_fd = -1;
     monitor_ifindex_map_fd = -1;
+    stats_map_fd = -1;
 }
 
 int xdp_read_packet_feature(void *feat)
@@ -287,4 +299,107 @@ int xdp_update_whitelist(const uint32_t ip_addr)
     }
 
     return 0;
+}
+
+int xdp_get_stats(uint64_t *rx, uint64_t *pass, uint64_t *drop, uint64_t *submit)
+{
+    int ncpus;
+    uint64_t *values;
+    uint64_t total;
+    __u32 idx;
+    int i;
+
+    if (stats_map_fd < 0) {
+        return -1;
+    }
+
+    ncpus = get_nprocs();
+    if (ncpus <= 0) {
+        return -1;
+    }
+
+    values = malloc(ncpus * sizeof(uint64_t));
+    if (!values) {
+        return -1;
+    }
+
+    total = 0;
+    idx = STATS_IDX_RX;
+    if (bpf_map_lookup_elem(stats_map_fd, &idx, values) == 0) {
+        for (i = 0; i < ncpus; i++) {
+            total += values[i];
+        }
+    }
+    if (rx) *rx = total;
+
+    total = 0;
+    idx = STATS_IDX_PASS;
+    if (bpf_map_lookup_elem(stats_map_fd, &idx, values) == 0) {
+        for (i = 0; i < ncpus; i++) {
+            total += values[i];
+        }
+    }
+    if (pass) *pass = total;
+
+    total = 0;
+    idx = STATS_IDX_DROP;
+    if (bpf_map_lookup_elem(stats_map_fd, &idx, values) == 0) {
+        for (i = 0; i < ncpus; i++) {
+            total += values[i];
+        }
+    }
+    if (drop) *drop = total;
+
+    total = 0;
+    idx = STATS_IDX_SUBMIT;
+    if (bpf_map_lookup_elem(stats_map_fd, &idx, values) == 0) {
+        for (i = 0; i < ncpus; i++) {
+            total += values[i];
+        }
+    }
+    if (submit) *submit = total;
+
+    free(values);
+    return 0;
+}
+
+int xdp_get_blacklist_count(void)
+{
+    int count = 0;
+    uint32_t key = 0, next_key;
+    int err;
+
+    if (blacklist_map_fd < 0) {
+        return -1;
+    }
+
+    err = bpf_map_get_next_key(blacklist_map_fd, NULL, &next_key);
+    while (err == 0) {
+        count++;
+        key = next_key;
+        err = bpf_map_get_next_key(blacklist_map_fd, &key, &next_key);
+    }
+
+    return count;
+}
+
+int xdp_get_blacklist_ips(uint32_t *ips, int max_count)
+{
+    int count = 0;
+    uint32_t key = 0, next_key;
+    int err;
+
+    if (!ips || max_count <= 0 || blacklist_map_fd < 0) {
+        return -1;
+    }
+
+    err = bpf_map_get_next_key(blacklist_map_fd, NULL, &next_key);
+    while (err == 0 && count < max_count) {
+        ips[count] = next_key;
+        count++;
+        key = next_key;
+        err = bpf_map_get_next_key(blacklist_map_fd, &key, &next_key);
+    }
+
+    return count;
 }

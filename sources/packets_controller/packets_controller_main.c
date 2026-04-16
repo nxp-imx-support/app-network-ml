@@ -12,16 +12,21 @@
 #include <errno.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <time.h>
+#include <stdint.h>
 
 #include "common/common.h"
 #include "ipc/tlv_protocol.h"
 #include "ipc/socket_manager.h"
 #include "xdp/xdp_controller.h"
+#include "stats/stats.h"
 
 #define DEFAULT_SOCKET_PATH "/tmp/imx_ddb.socket"
 #define DEFAULT_WHITELIST_PATH "whitelist.txt"
+#define DEFAULT_REPORT_PATH "report.json"
 #define MAX_WHITELIST_IPS 256
 #define MAX_INTERFACES 2
+#define REPORT_INTERVAL_SEC 1
 
 // #define DEBUG_PKT
 
@@ -32,17 +37,22 @@ typedef struct {
     const char *prog_file;
     const char *socket_path;
     const char *whitelist_path;
+    const char *report_path;
 } cli_args_t;
 
 static uint32_t whitelist_ips[MAX_WHITELIST_IPS];
 static int whitelist_count = 0;
 static volatile int quit = 0;
+static stats_report_t stats_report;
+static uint32_t blacklist_updates_counter = 0;
 
 static void signal_handler(int sig);
 static void print_usage(const char *prog);
 static void print_detection_result(const detection_result_t *result);
 static int parse_arguments(int argc, char **argv, cli_args_t *args);
 static int load_whitelist_from_config(const char *path);
+static int write_stats_report(const char *path);
+static void update_stats_report(void);
 
 #ifdef DEBUG_PKT
 static void print_packet_feature(const packet_feature_t *feat);
@@ -53,13 +63,16 @@ static int detection_cnt = 0;
 
 int main(int argc, char **argv)
 {
+    time_t last_report_time;
+
     cli_args_t args = {
         .ifnames = {NULL, NULL},
         .ifcount = 0,
         .monitor_ifname = NULL,
         .prog_file = NULL,
         .socket_path = DEFAULT_SOCKET_PATH,
-        .whitelist_path = DEFAULT_WHITELIST_PATH
+        .whitelist_path = DEFAULT_WHITELIST_PATH,
+        .report_path = DEFAULT_REPORT_PATH
     };
 
     if (parse_arguments(argc, argv, &args) != 0) {
@@ -75,6 +88,8 @@ int main(int argc, char **argv)
     }
 
     whitelist_count = load_whitelist_from_config(args.whitelist_path);
+
+    time(&last_report_time);
 
     int server_fd = create_unix_socket_server(args.socket_path);
     if (server_fd < 0) {
@@ -112,6 +127,16 @@ int main(int argc, char **argv)
 
     // main loop
     while (!quit) {
+        time_t current_time;
+        time(&current_time);
+        
+        if ((current_time - last_report_time >= REPORT_INTERVAL_SEC)) {
+            if (write_stats_report(args.report_path) != 0) {
+                fprintf(stderr, "Failed to write stats report. Current time: %ld\n", current_time);
+            }
+            last_report_time = current_time;
+        }
+        
         packet_feature_t feat;
 
         if (xdp_read_packet_feature(&feat) < 0) {
@@ -152,6 +177,7 @@ int main(int argc, char **argv)
             // Only confidence > 30, is_attack=1 will trigger blacklist update
             if (entries[i].is_attack && entries[i].confidence > 30) {
                 xdp_update_blacklist(entries[i].src_ip);
+                blacklist_updates_counter++;
             }
         }
 
@@ -180,6 +206,7 @@ static void print_usage(const char *prog)
     fprintf(stderr, "  -p  XDP program file (.o) (required)\n");
     fprintf(stderr, "  -s  Socket path for ml_detector IPC (optional, default: %s)\n", DEFAULT_SOCKET_PATH);
     fprintf(stderr, "  -w  Whitelist file (optional, default: %s)\n", DEFAULT_WHITELIST_PATH);
+    fprintf(stderr, "  -r  Report file path (optional, default: %s)\n", DEFAULT_REPORT_PATH);
     fprintf(stderr, "\nExamples:\n");
     fprintf(stderr, "  %s -i eth0 -m eth0 -p xdp_forward_kern.o          # Single interface (echo + ML)\n", prog);
     fprintf(stderr, "  %s -i eth0 eth1 -m eth0 -p xdp_forward_kern.o    # Dual interface (eth0: ML, eth1: forward)\n", prog);
@@ -230,6 +257,9 @@ static int parse_arguments(int argc, char **argv, cli_args_t *args)
                 break;
             case 'w':
                 args->whitelist_path = optarg;
+                break;
+            case 'r':
+                args->report_path = optarg;
                 break;
             case 'h':
                 print_usage(argv[0]);
@@ -298,6 +328,31 @@ static int load_whitelist_from_config(const char *path)
 
     fclose(f);
     return count;
+}
+
+static void update_stats_report(void)
+{
+    xdp_get_stats(&stats_report.xdp_rx_packets, 
+                   &stats_report.xdp_pass_packets,
+                   &stats_report.xdp_drop_packets,
+                   &stats_report.xdp_submit_packets);
+    
+    stats_report.blacklist_count = xdp_get_blacklist_count();
+    stats_report.blacklist_updates = blacklist_updates_counter;
+    stats_report.blacklist_count_total = stats_report.blacklist_count;
+    
+    xdp_get_blacklist_ips(stats_report.blacklist_ips, MAX_BLACKLIST_DISPLAY);
+    
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    stats_report.timestamp_ms = (uint64_t)(ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
+}
+
+static int write_stats_report(const char* report_path)
+{
+    update_stats_report();
+    
+    return stats_write_report(report_path, &stats_report);
 }
 
 #ifdef DEBUG_PKT

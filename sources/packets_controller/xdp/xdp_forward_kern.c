@@ -18,6 +18,14 @@
 #include "common.h"
 #include "xdp_kern.h"
 
+static __always_inline void stats_increment(__u32 idx)
+{
+    __u64 *val = bpf_map_lookup_elem(&stats_map, &idx);
+    if (val) {
+        __sync_fetch_and_add(val, 1);
+    }
+}
+
 static __always_inline int match_whitelist_flow(__u32 src_ip, __u32 dst_ip)
 {
     if (bpf_map_lookup_elem(&whitelist_map, &src_ip)) 
@@ -37,19 +45,27 @@ static __always_inline int match_blacklist_flow(__u32 src_ip)
 SEC("xdp")
 int xdp_forward_prog(struct xdp_md *ctx)
 {
+    stats_increment(STATS_IDX_RX);
+
     void *data_end = (void *)(long)ctx->data_end;
     void *data = (void *)(long)ctx->data;
 
     struct ethhdr *eth = data;
-    if ((void *)(eth + 1) > data_end)
+    if ((void *)(eth + 1) > data_end) {
+        stats_increment(STATS_IDX_PASS);
         return XDP_PASS;
+    }
 
-    if (eth->h_proto != bpf_htons(ETH_P_IP))
+    if (eth->h_proto != bpf_htons(ETH_P_IP)) {
+        stats_increment(STATS_IDX_PASS);
         return XDP_PASS;
+    }
 
     struct iphdr *ip = (void *)(eth + 1);
-    if ((void *)(ip + 1) > data_end)
+    if ((void *)(ip + 1) > data_end) {
+        stats_increment(STATS_IDX_PASS);
         return XDP_PASS;
+    }
 
     __u16 src_port = 0;
     __u16 dst_port = 0;
@@ -60,8 +76,10 @@ int xdp_forward_prog(struct xdp_md *ctx)
 
     if (ip->protocol == IPPROTO_TCP) {
         struct tcphdr *tcp = (void *)ip + (ip->ihl * 4);
-        if ((void *)(tcp + 1) > data_end)
+        if ((void *)(tcp + 1) > data_end) {
+            stats_increment(STATS_IDX_PASS);
             return XDP_PASS;
+        }
         src_port = bpf_ntohs(tcp->source);
         dst_port = bpf_ntohs(tcp->dest);
         __u8 flags_byte = ((__u8 *)tcp)[13];
@@ -70,34 +88,47 @@ int xdp_forward_prog(struct xdp_md *ctx)
         tcp_flags = 0x3F & flags_byte;
     } else if (ip->protocol == IPPROTO_UDP) {
         struct udphdr *udp = (void *)ip + (ip->ihl * 4);
-        if ((void *)(udp + 1) > data_end)
+        if ((void *)(udp + 1) > data_end) {
+            stats_increment(STATS_IDX_PASS);
             return XDP_PASS;
+        }
         src_port = bpf_ntohs(udp->source);
         dst_port = bpf_ntohs(udp->dest);
     } else if (ip->protocol == IPPROTO_ICMP) {
         struct icmphdr *icmp = (void *)ip + (ip->ihl * 4);
-        if ((void *)(icmp + 1) > data_end)
+        if ((void *)(icmp + 1) > data_end) {
+            stats_increment(STATS_IDX_PASS);
             return XDP_PASS;
+        }
         icmp_type = icmp->type;
-    } else 
+    } else {
+        stats_increment(STATS_IDX_PASS);
         return XDP_PASS;
-
-    for (__u32 i = 0; i < sizeof(pass_ports) / sizeof(pass_ports[0]); i++) {
-        if (dst_port == pass_ports[i] || src_port == pass_ports[i])
-            return XDP_PASS;
     }
 
-    if (match_whitelist_flow(ip->saddr, ip->daddr))
-        return XDP_PASS;
+    for (__u32 i = 0; i < sizeof(pass_ports) / sizeof(pass_ports[0]); i++) {
+        if (dst_port == pass_ports[i] || src_port == pass_ports[i]) {
+            stats_increment(STATS_IDX_PASS);
+            return XDP_PASS;
+        }
+    }
 
-    if (match_blacklist_flow(ip->saddr))
+    if (match_whitelist_flow(ip->saddr, ip->daddr)) {
+        stats_increment(STATS_IDX_PASS);
+        return XDP_PASS;
+    }
+
+    if (match_blacklist_flow(ip->saddr)) {
+        stats_increment(STATS_IDX_DROP);
         return XDP_DROP;
+    }
 
     __u32 ingress_ifindex = ctx->ingress_ifindex;
     __u32 *is_monitor = bpf_map_lookup_elem(&monitor_ifindex_map, &ingress_ifindex);
     if (is_monitor && *is_monitor == 1) {
         packet_feature_t *pkt = bpf_ringbuf_reserve(&packet_ringbuf, sizeof(packet_feature_t), 0);
         if (pkt) {
+            stats_increment(STATS_IDX_SUBMIT);
             __builtin_memset(pkt, 0, sizeof(packet_feature_t));
             pkt->timestamp = bpf_ktime_get_ns();
             __builtin_memcpy(pkt->src_mac, eth->h_source, MAC_ADDRESS_LENGTH);
@@ -122,8 +153,10 @@ int xdp_forward_prog(struct xdp_md *ctx)
 
     __u32 idx = 0;
     __u32 *ifcount_ptr = bpf_map_lookup_elem(&ifindex_map, &idx);
-    if (!ifcount_ptr)
+    if (!ifcount_ptr) {
+        stats_increment(STATS_IDX_PASS);
         return XDP_PASS;
+    }
 
     __u32 ifcount = *ifcount_ptr;
 
@@ -144,6 +177,7 @@ int xdp_forward_prog(struct xdp_md *ctx)
             return bpf_redirect(other_ifindex, 0);
     }
 
+    stats_increment(STATS_IDX_PASS);
     return XDP_PASS;
 }
 
