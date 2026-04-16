@@ -173,6 +173,39 @@ body {
     font-size: 25px;
 }
 
+/* Control bar */
+#control-bar {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    margin-top: 10px;
+    font-size: 16px;
+}
+
+#control-bar button {
+    padding: 6px 20px;
+    background-color: #07151b;
+    color: #fcb316;
+    border: 1px solid #fcb316;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    transition: background-color 0.2s;
+}
+
+#control-bar button:hover {
+    background-color: #fcb316;
+    color: #07151b;
+}
+
+#control-status {
+    color: #fcb316;
+    font-size: 13px;
+    min-width: 80px;
+}
+
 /* Charts container */
 .charts-container {
     display: grid;
@@ -232,8 +265,8 @@ body {
     border-radius: 5px;
 }
 
-/* Blacklist IP container */
-.blacklist-ips-container {
+/* Attacker IP container */
+.attacker-ips-container {
     max-height: 150px;
     overflow-y: auto;
     border: 1px solid #ccc;
@@ -242,18 +275,43 @@ body {
     margin-top: 15px;
 }
 
-.blacklist-ip-item {
+.attacker-ip-item {
     padding: 4px 8px;
     border-bottom: 1px solid #eee;
     font-family: monospace;
     font-size: 14px;
 }
 
-.blacklist-ip-item:last-child {
+.attacker-ip-item:last-child {
     border-bottom: none;
 }
 
-.blacklist-ip-item:nth-child(even) {
+.attacker-ip-item:nth-child(even) {
+    background-color: rgba(252, 179, 22, 0.1);
+}
+
+/* XDP Connections container */
+.xdp-connections-container {
+    max-height: 150px;
+    overflow-y: auto;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.9);
+    margin-top: 15px;
+}
+
+.xdp-connection-item {
+    padding: 4px 8px;
+    border-bottom: 1px solid #eee;
+    font-family: monospace;
+    font-size: 14px;
+}
+
+.xdp-connection-item:last-child {
+    border-bottom: none;
+}
+
+.xdp-connection-item:nth-child(even) {
     background-color: rgba(252, 179, 22, 0.1);
 }
 

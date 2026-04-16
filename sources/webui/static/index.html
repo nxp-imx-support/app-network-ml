@@ -45,83 +45,37 @@
     
     <div id="board-name">
         <p>i.MX DDoS Blocker</p>
-        <p id="board-name-line2">Real-time Dashboard</p>
+        <div id="control-bar">
+            <button id="btn-start" onclick="controlService('start')">Start</button>
+            <button id="btn-stop" onclick="controlService('stop')">Stop</button>
+            <button id="btn-reset" onclick="controlService('reset')">Reset</button>
+            <span id="control-status"></span>
+        </div>
     </div>
     
     <div class="charts-container">
-        <!-- XDP Statistics -->
-        <div id="box1" class="box">
-            <div id="box1-title" class="box-title">XDP Statistics</div>
-            <div id="xdp-stats-content">
-                <div class="stat-item">
-                    <span class="stat-label">RX Packets:</span>
-                    <span id="xdp-rx" class="stat-value">0</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">PASS Packets:</span>
-                    <span id="xdp-pass" class="stat-value">0</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">DROP Packets:</span>
-                    <span id="xdp-drop" class="stat-value">0</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">Submit to ML:</span>
-                    <span id="xdp-submit" class="stat-value">0</span>
-                </div>
-            </div>
-        </div>
-        
-        <!-- System Resources -->
-        <div id="box2" class="box">
-            <div id="box2-title" class="box-title">System Resources</div>
-            <div id="system-stats-content">
-                <div class="stat-item">
-                    <span class="stat-label">CPU Usage:</span>
-                    <span id="cpu-percent" class="stat-value">0%</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">RAM Usage:</span>
-                    <span id="ram-percent" class="stat-value">0%</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">RAM Used:</span>
-                    <span id="ram-used" class="stat-value">0 MB</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">RAM Total:</span>
-                    <span id="ram-total" class="stat-value">0 MB</span>
-                </div>
-            </div>
-            
-            <!-- CPU Chart -->
-            <div id="cpu-chart" class="mini-chart"></div>
-            <!-- RAM Chart -->
-            <div id="ram-chart" class="mini-chart"></div>
-        </div>
-        
-        <!-- Blacklist -->
+        <!-- Attacker IP -->
         <div id="box3" class="box">
-            <div id="box3-title" class="box-title">Blacklist</div>
-            <div id="blacklist-content">
+            <div id="box3-title" class="box-title">Attack Detection</div>
+            <div id="attacker-content">
                 <div class="stat-item">
                     <span class="stat-label">IPs Blocked:</span>
-                    <span id="blacklist-count" class="stat-value">0</span>
+                    <span id="attacker-count" class="stat-value">0</span>
                 </div>
                 <div class="stat-item">
                     <span class="stat-label">Total Updates:</span>
-                    <span id="blacklist-updates" class="stat-value">0</span>
+                    <span id="attacker-updates" class="stat-value">0</span>
                 </div>
             </div>
-            
+
             <!-- Scrollable IP list -->
-            <div id="blacklist-ips-container" class="blacklist-ips-container">
-                <div id="blacklist-ips-list">
-                    <div class="blacklist-ip-item">No blocked IPs</div>
+            <div id="attacker-ips-container" class="attacker-ips-container">
+                <div id="attacker-ips-list">
+                    <div class="attacker-ip-item">No blocked IPs</div>
                 </div>
             </div>
         </div>
-        
+
         <!-- Network I/O -->
         <div id="box4" class="box">
             <div id="box4-title" class="box-title">Network I/O</div>
@@ -143,9 +97,67 @@
                     <span id="net-tx-packets" class="stat-value">0</span>
                 </div>
             </div>
-            
+
             <!-- Network Chart -->
             <div id="network-chart" class="mini-chart"></div>
+        </div>
+
+        <!-- XDP Statistics -->
+        <div id="box1" class="box">
+            <div id="box1-title" class="box-title">XDP Statistics</div>
+            <div id="xdp-stats-content">
+                <div class="stat-item">
+                    <span class="stat-label">RX Packets:</span>
+                    <span id="xdp-rx" class="stat-value">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">PASS Packets:</span>
+                    <span id="xdp-pass" class="stat-value">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">DROP Packets:</span>
+                    <span id="xdp-drop" class="stat-value">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Submit to ML:</span>
+                    <span id="xdp-submit" class="stat-value">0</span>
+                </div>
+            </div>
+
+            <!-- Scrollable connections list (placeholder for future) -->
+            <div id="xdp-connections-container" class="xdp-connections-container">
+                <div id="xdp-connections-list">
+                    <div class="xdp-connection-item">Connection table placeholder</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- System Resources -->
+        <div id="box2" class="box">
+            <div id="box2-title" class="box-title">System Resources</div>
+            <div id="system-stats-content">
+                <div class="stat-item">
+                    <span class="stat-label">CPU Usage:</span>
+                    <span id="cpu-percent" class="stat-value">0%</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">RAM Usage:</span>
+                    <span id="ram-percent" class="stat-value">0%</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">RAM Used:</span>
+                    <span id="ram-used" class="stat-value">0 MB</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">RAM Total:</span>
+                    <span id="ram-total" class="stat-value">0 MB</span>
+                </div>
+            </div>
+
+            <!-- CPU Chart -->
+            <div id="cpu-chart" class="mini-chart"></div>
+            <!-- RAM Chart -->
+            <div id="ram-chart" class="mini-chart"></div>
         </div>
     </div>
     
