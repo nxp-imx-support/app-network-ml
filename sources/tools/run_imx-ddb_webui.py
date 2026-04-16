@@ -1,3 +1,9 @@
+# Copyright 2026 NXP
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# Launcher: starts WebUI only. Use the WebUI buttons to start/stop
+# packets_controller and ml_detector.
+
 import subprocess
 import signal
 import sys
@@ -5,10 +11,12 @@ import time
 
 quit_flag = False
 
+
 def handle_sigint(sig, frame):
     global quit_flag
     print("Capture Ctrl-C signal")
     quit_flag = True
+
 
 def setup_network_bridge():
     port_0 = "swp0"
@@ -30,6 +38,7 @@ def setup_network_bridge():
     subprocess.run(f"ip link set {port_1} up", shell=True)
     time.sleep(2)
 
+
 def remove_network_bridge():
     bridge_name = "br0"
     port_0 = "swp0"
@@ -41,55 +50,33 @@ def remove_network_bridge():
     subprocess.run(f"ip link del {bridge_name}", shell=True)
     time.sleep(2)
 
+
 if __name__ == '__main__':
     signal.signal(signal.SIGINT, handle_sigint)
 
-    pkt_ctl_log = open("logs/pkt_controller.log", "w")
-    ml_detector_log = open("logs/ml_detector.log", "w")
     webui_log = open("logs/webui.log", "w")
 
     setup_network_bridge()
 
-    # Start up packets_controller
-    pkt_controller = subprocess.Popen(["./packets_controller_main", "-i", "swp0", "-m", "swp0", "-p", "./xdp_forward_kern.o"], 
-                                    cwd="packets_controller", stdout=pkt_ctl_log, stderr=pkt_ctl_log)
-    time.sleep(3)
+    webui = subprocess.Popen(["python3", "app.py"], cwd="webui",
+                             stdout=webui_log, stderr=webui_log)
 
-    # Start up ml_detector
-    ml_detector = subprocess.Popen(["python3", "detector_main.py"], cwd="ml_detector", stdout=ml_detector_log, stderr=ml_detector_log)
+    time.sleep(2)
 
-    # Start up WebUI
-    webui = subprocess.Popen(["python3", "app.py"], cwd="webui", stdout=webui_log, stderr=webui_log)
-
-    time.sleep(3)
-
-    if pkt_controller.poll() is not None:
-        print("Error: packets_controller failed to start")
-        quit_flag = True
-    if ml_detector.poll() is not None:
-        print("Error: ml_detector failed to start")
-        quit_flag = True
     if webui.poll() is not None:
         print("Error: webui failed to start")
         quit_flag = True
-
-    if not quit_flag:
-        print("i.MX DDoS has been started. Press Ctrl C to exit...")
+    else:
+        print("i.MX DDoS Blocker WebUI started. Press Ctrl+C to exit...")
 
     while not quit_flag:
         time.sleep(1)
 
-    pkt_controller.send_signal(signal.SIGINT)
-    ml_detector.send_signal(signal.SIGINT)
     webui.send_signal(signal.SIGINT)
-    pkt_controller.wait()
-    ml_detector.wait()
     webui.wait()
 
-    pkt_ctl_log.close()
-    ml_detector_log.close()
     webui_log.close()
 
     remove_network_bridge()
 
-    print("All exit. The runtime logs can be found in logs/ folder")
+    print("All exit. Runtime logs can be found in logs/ folder")
