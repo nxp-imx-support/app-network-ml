@@ -292,7 +292,7 @@ body {
 
 /* XDP Connections container */
 .xdp-connections-container {
-    max-height: 150px;
+    max-height: 200px;
     overflow-y: auto;
     border: 1px solid #ccc;
     border-radius: 4px;
@@ -300,11 +300,20 @@ body {
     margin-top: 15px;
 }
 
+.connections-header {
+    padding: 8px 12px;
+    background-color: #07151b;
+    color: white;
+    font-weight: bold;
+    font-size: 14px;
+    border-bottom: 1px solid #ddd;
+}
+
 .xdp-connection-item {
-    padding: 4px 8px;
+    padding: 6px 8px;
     border-bottom: 1px solid #eee;
     font-family: monospace;
-    font-size: 14px;
+    font-size: 13px;
 }
 
 .xdp-connection-item:last-child {
@@ -313,6 +322,46 @@ body {
 
 .xdp-connection-item:nth-child(even) {
     background-color: rgba(252, 179, 22, 0.1);
+}
+
+.connection-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.connection-flow {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.ip-pair {
+    color: #333;
+}
+
+.arrow {
+    color: #fcb316;
+    font-weight: bold;
+}
+
+.protocol-badge {
+    background-color: #2196F3;
+    color: white;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: bold;
+}
+
+.connection-stats {
+    text-align: right;
+}
+
+.packet-count {
+    color: #666;
+    font-size: 12px;
 }
 
 /* Status bar */

@@ -8,7 +8,7 @@
 // Global chart instances
 let cpuChart, ramChart, networkChart;
 
-// Data arrays for charts (last 10 data points)
+// Data arrays for charts (last 5 minutes = 300 data points at 1-second intervals)
 let cpuData = [];
 let ramData = [];
 let networkRxData = [];
@@ -196,7 +196,7 @@ function initializeCharts() {
         },
         yAxis: {
             type: 'value',
-            axisLabel: { show: false },
+            axisLabel: { show: true },
             axisLine: { show: false },
             splitLine: { show: false }
         },
@@ -279,6 +279,9 @@ function updateDashboard(data) {
 
     // Update attacker IPs
     updateAttackerIps(data.blacklist_ips || []);
+    
+    // Update XDP connections
+    updateConnections(data.connections || [], data.connection_count || 0);
 
     // Update network statistics
     const netRxMB = (data.net_rx_bytes / (1024 * 1024)).toFixed(1);
@@ -308,6 +311,49 @@ function updateAttackerIps(ips) {
         item.textContent = ip;
         container.appendChild(item);
     });
+}
+
+// Update XDP connections table
+function updateConnections(connections, totalCount) {
+    const container = document.getElementById('xdp-connections-list');
+    container.innerHTML = '';
+
+    if (!connections || connections.length === 0) {
+        container.innerHTML = '<div class="xdp-connection-item">No active connections</div>';
+        return;
+    }
+
+    connections.forEach(conn => {
+        const item = document.createElement('div');
+        item.className = 'xdp-connection-item';
+        
+        const protoName = getProtocolName(conn.l4_type);
+        
+        item.innerHTML = `
+            <div class="connection-row">
+                <div class="connection-flow">
+                    <span class="ip-pair">${conn.src_ip}:${conn.src_port}</span>
+                    <span class="arrow">&rarr;</span>
+                    <span class="ip-pair">${conn.dst_ip}:${conn.dst_port}</span>
+                    <span class="protocol-badge">${protoName}</span>
+                </div>
+                <div class="connection-stats">
+                    <span class="packet-count">${formatNumber(conn.packet_count)} pkts</span>
+                </div>
+            </div>
+        `;
+        container.appendChild(item);
+    });
+}
+
+function getProtocolName(l4Type) {
+    switch (l4Type) {
+        case 6: return 'TCP';
+        case 17: return 'UDP';
+        case 1: return 'ICMP';
+        case 58: return 'ICMPv6';
+        default: return 'OTHER';
+    }
 }
 
 // Placeholder for XDP connections (to be implemented)
@@ -342,8 +388,8 @@ function updateCharts(data) {
     networkRxData.push(data.net_rx_packets || 0);
     networkTxData.push(data.net_tx_packets || 0);
 
-    // Keep only last 10 data points
-    if (timeLabels.length > 10) {
+    // Keep only last 5 minutes (300 data points at 1-second intervals)
+    if (timeLabels.length > 300) {
         timeLabels.shift();
         cpuData.shift();
         ramData.shift();

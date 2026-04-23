@@ -28,11 +28,11 @@
             <input type="checkbox" name="" id="check">
             <div class="nav-btn">
                 <div class="nav-links">
-                    <ul>
+                    <!-- <ul>
                         <li class="nav-link" style="--i: .6s">
                             <a href="/">Dashboard</a>
                         </li>
-                    </ul>
+                    </ul> -->
                 </div>
             </div>
             <div class="hamburger-menu-container">
@@ -76,6 +76,39 @@
             </div>
         </div>
 
+        <!-- XDP Statistics -->
+        <div id="box1" class="box">
+            <div id="box1-title" class="box-title">XDP Statistics</div>
+            <div id="xdp-stats-content">
+                <div class="stat-item">
+                    <span class="stat-label">RX Packets:</span>
+                    <span id="xdp-rx" class="stat-value">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">PASS Packets:</span>
+                    <span id="xdp-pass" class="stat-value">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">DROP Packets:</span>
+                    <span id="xdp-drop" class="stat-value">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">Submit to ML:</span>
+                    <span id="xdp-submit" class="stat-value">0</span>
+                </div>
+            </div>
+
+            <!-- Scrollable connections list -->
+            <div id="xdp-connections-container" class="xdp-connections-container">
+                <div class="connections-header">
+                    <span>Active Connections</span>
+                </div>
+                <div id="xdp-connections-list">
+                    <div class="xdp-connection-item">No active connections</div>
+                </div>
+            </div>
+        </div>
+
         <!-- Network I/O -->
         <div id="box4" class="box">
             <div id="box4-title" class="box-title">Network I/O</div>
@@ -102,35 +135,6 @@
             <div id="network-chart" class="mini-chart"></div>
         </div>
 
-        <!-- XDP Statistics -->
-        <div id="box1" class="box">
-            <div id="box1-title" class="box-title">XDP Statistics</div>
-            <div id="xdp-stats-content">
-                <div class="stat-item">
-                    <span class="stat-label">RX Packets:</span>
-                    <span id="xdp-rx" class="stat-value">0</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">PASS Packets:</span>
-                    <span id="xdp-pass" class="stat-value">0</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">DROP Packets:</span>
-                    <span id="xdp-drop" class="stat-value">0</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">Submit to ML:</span>
-                    <span id="xdp-submit" class="stat-value">0</span>
-                </div>
-            </div>
-
-            <!-- Scrollable connections list (placeholder for future) -->
-            <div id="xdp-connections-container" class="xdp-connections-container">
-                <div id="xdp-connections-list">
-                    <div class="xdp-connection-item">Connection table placeholder</div>
-                </div>
-            </div>
-        </div>
 
         <!-- System Resources -->
         <div id="box2" class="box">
