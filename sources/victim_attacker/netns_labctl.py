@@ -63,7 +63,7 @@ def start_dos_attack():
 
 def test_victim_conn():
     host_ip = victim_ip.split('/')[0]
-    ret = subprocess.run("curl --max-time 5 http://{}:8080".format(host_ip), shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+    ret = subprocess.run("curl --max-time 3 http://{}:8080".format(host_ip), shell=True, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
     return ret.returncode == 0
 
 def main(stdscr):
