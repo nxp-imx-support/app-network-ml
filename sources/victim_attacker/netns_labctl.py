@@ -10,6 +10,9 @@ import signal
 
 victim_server_process = None
 attack_process = None
+# Please check your network interfaces before running this script
+# You can use 'ip link show' to list all available interfaces
+# If you use another OB2.0 board, the iface_1 should be swp0.
 iface_1 = "eth0"
 iface_2 = "eth1"
 victim_ip = "10.0.1.10/24"
