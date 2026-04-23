@@ -88,6 +88,16 @@ int main(int argc, char **argv)
     }
 
     whitelist_count = load_whitelist_from_config(args.whitelist_path);
+    for (int i = 0; i < whitelist_count; i++) {
+        if (xdp_update_whitelist(whitelist_ips[i]) < 0) {
+            fprintf(stderr, "Failed to add whitelist IP: %u\n", whitelist_ips[i]);
+            xdp_cleanup();
+            return 1;
+        }
+    }
+    printf("Whitelist loaded: %d IPs\n", whitelist_count);
+
+    stats_init_connection_table();
 
     time(&last_report_time);
 
@@ -144,6 +154,8 @@ int main(int argc, char **argv)
             continue;
         }
         recv_pkt_cnt++;
+        
+        stats_update_connection(feat.src_ip, feat.src_port, feat.dst_ip, feat.dst_port, feat.l4_type);
 
         #ifdef DEBUG_PKT
         print_packet_feature(&feat);
@@ -187,6 +199,7 @@ int main(int argc, char **argv)
     close(client_fd);
     close(server_fd);
     unlink(args.socket_path);
+    stats_cleanup_connection_table();
     xdp_cleanup();
 
     return 0;
@@ -302,13 +315,19 @@ static int load_whitelist_from_config(const char *path)
         return 0;
     }
 
-    char line[64];
+    char line[256];
     int count = 0;
     char *ptr;
 
     while (fgets(line, sizeof(line), f) && count < MAX_WHITELIST_IPS) {
+        printf("Read line: %s", line);
         if (line[0] == '#' || line[0] == '\n') {
             continue;
+        }
+
+        size_t len = strlen(line);
+        while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r')) {
+            line[--len] = '\0';
         }
 
         ptr = line;
@@ -319,6 +338,13 @@ static int load_whitelist_from_config(const char *path)
         if (*ptr == '\n' || *ptr == '\0') {
             continue;
         }
+
+        char *end = ptr + strlen(ptr) - 1;
+        while (end > ptr && (*end == ' ' || *end == '\t')) {
+            *end-- = '\0';
+        }
+
+        printf("whitelist IP: %s\n", ptr);
 
         uint32_t ip;
         if (inet_pton(AF_INET, ptr, &ip) == 1) {
