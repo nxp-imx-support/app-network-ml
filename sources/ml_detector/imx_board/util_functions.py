@@ -5,7 +5,6 @@
 # Calculate metrics using numpy
 
 import glob
-import h5py
 import numpy as np
 
 class PROTOCOL_NUM:
@@ -44,6 +43,7 @@ def calculate_metrics(y_true, y_pred):
 
 def load_dataset(path):
     filename = glob.glob(path)[0]
+    import h5py
     dataset = h5py.File(filename, "r")
     set_x_orig = np.array(dataset["set_x"][:])  # features
     set_y_orig = np.array(dataset["set_y"][:])  # labels
