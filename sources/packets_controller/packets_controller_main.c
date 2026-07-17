@@ -253,7 +253,8 @@ static int parse_arguments(int argc, char **argv, cli_args_t *args)
     while ((opt = getopt(argc, argv, "i:m:p:s:w:h")) != -1) {
         switch (opt) {
             case 'i':
-                args->ifnames[ifidx++] = optarg;
+                if (ifidx < MAX_INTERFACES)
+                    args->ifnames[ifidx++] = optarg;
                 while (optind < argc && argv[optind][0] != '-' && ifidx < MAX_INTERFACES) {
                     args->ifnames[ifidx++] = argv[optind++];
                 }
