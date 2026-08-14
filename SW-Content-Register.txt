@@ -18,7 +18,6 @@ imx_ddos_blocker           Name: imx-ddos-blocker
                                      doc
                                      Readme.md
                                      build_and_install.sh
-                                     run_demo.sh
                            Origin: NXP (NXP Proprietary)
                            Url: https://github.com/nxp-imx-support/app-network-ml
 
