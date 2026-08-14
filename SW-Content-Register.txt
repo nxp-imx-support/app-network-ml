@@ -1,24 +1,48 @@
-NXP Software Content Register
+Release Name: i.MX DDoS Blocker for OrangeBox2.0
+Release Version: ob2.0-3.0.0
+Package License: LA_OPT_Online Code Hosting NXP_Software_License - v1.4 May 2025
 
-Release - 0.1.0
-Dec 2025
+imx_ddos_blocker           Name: imx-ddos-blocker
+                           Version: ob2.0-3.0.0
+                           Outgoing License: LA_OPT_Online Code Hosting
+                           NXP_Software_License - v1.4 May 2025
+                           License File: ./LICENSE
+                           Format: source code, scripts, documentation
+                           Description: DDoS attack detection and blocking by
+                           AI sample application for the i.MX943 OrangeBox2.0
+                           board. Includes the LUCID-CNN model training,
+                           quantization and conversion pipeline, the XDP
+                           based packet controller, the ML detector and the
+                           web UI.
+                           Location: sources
+                                     doc
+                                     Readme.md
+                                     build_and_install.sh
+                                     run_demo.sh
+                           Origin: NXP (NXP Proprietary)
+                           Url: https://github.com/nxp-imx-support/app-network-ml
 
-Outgoing License: LA_OPT_Online Code Hosting NXP_Software_License - v1.2 October 2023
-License File:     LICENSE
+apache_echarts             Name: Apache ECharts
+                           Version: 5.x
+                           Outgoing License: Apache-2.0
+                           License File: https://github.com/apache/echarts/blob/master/LICENSE
+                           Format: binary (minified JavaScript)
+                           Description: Charting and visualization library
+                           used by the web UI dashboard.
+                           Location: sources/webui/static/lib/echarts.min.js
+                           Origin: The Apache Software Foundation (Apache-2.0)
+                           Url: https://echarts.apache.org/
 
---------------------------------------------
-
-Package:                   imx-ddb-0.1.0
-Version:                   0.1.0
-Date:                      Dec 2025
-Outgoing License:          LA_OPT_Online Code Hosting NXP_Software_License - v1.4 May 2025 
-License File:              LICENSE
-Package Category:          Demo application
-Type of content:           Source code
-Description and comments:  DDoS attack detection and blocking by AI sample applications
-Release Location:          https://github.com/nxp-imx-support/app-network-ml
-Origin:                    NXP (NXP Proprietary)
-                           lucid-ddos v2.0 (Apache-2.0) - https://github.com/doriguzzi/lucid-ddos/
-                           JSON for Modern C++ v3.11.3 (MIT) - https://github.com/nlohmann/json
-                           Bootstrap v5.1.3 (MIT) - https://github.com/twbs/bootstrap
-                           jQuery v3.7.1 (MIT) - https://jquery.com/
+cic_ddos2019               Name: CIC-DDoS2019 dataset
+                           Version: 2019
+                           Outgoing License: UNB CIC dataset license
+                           License File: https://www.unb.ca/cic/datasets/ddos-2019.html
+                           Format: pcap traffic traces
+                           Description: Sample traffic traces of benign and
+                           malicious network traffic from the CIC-DDoS2019
+                           dataset provided by the Canadian Institute for
+                           Cybersecurity of the University of New Brunswick
+                           (UNB).
+                           Location: sample-dataset
+                           Origin: Canadian Institute for Cybersecurity, UNB
+                           Url: https://www.unb.ca/cic/datasets/ddos-2019.html
